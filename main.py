@@ -333,7 +333,7 @@ def handle_select_chatbot_service(prompt, user_data, phone_id):
         # Find the selected chatbot service
         selected_service = None
         for service in ChatbotService:
-            if prompt.lower() in service.value.lower() or prompt == str(list(ChatbotService).index(service)+1:
+            if prompt.lower() in service.value.lower() or prompt == str(list(ChatbotService).index(service)+1):
                 selected_service = service
                 break
                 
