@@ -252,6 +252,7 @@ def handle_welcome(prompt, user_data, phone_id):
     update_user_state(user_data['sender'], {'step': 'main_menu'})
     return {'step': 'main_menu'}
 
+
 def handle_main_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
