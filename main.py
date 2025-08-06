@@ -5,12 +5,12 @@ import random
 import string
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template
-import redis
 import json
 import traceback
 from enum import Enum
+from upstash_redis import Redis
 
-logging.basicConfig(level=logging.INFO)
+
 
 app = Flask(__name__)
 
@@ -22,7 +22,14 @@ owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
 
 # Redis client setup
-redis_client = redis.StrictRedis.from_url(redis_url, decode_responses=True)
+#redis_client = redis.StrictRedis.from_url(redis_url, decode_responses=True)
+
+redis_client = Redis(url="https://charming-badger-9935.upstash.io", token="ASbPAAIjcDE1NDVlZTRiZGI5ZTE0NDFlOTU0ODY1NWJjOTVlZmFmNHAxMA")
+
+redis.set("foo", "bar")
+value = redis.get("foo")
+
+logging.basicConfig(level=logging.INFO)
 
 # After redis_client setup
 try:
