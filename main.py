@@ -1370,7 +1370,19 @@ def webhook():
                     list_response = message["interactive"]["list_reply"]["title"]
                     message_handler(list_response, sender, phone_id)
                 else:
-                    send_message("Please select an option from the buttons", sender, phone_id)
+                    restart_msg = ("Please select a service type:")
+                    service_options = [service.value for service in ServiceType]
+                    send_list_message(
+                        restart_msg,
+                        service_options,
+                        user_data['sender'],
+                        phone_id
+                    )
+                    
+                    update_user_state(user_data['sender'], {'step': 'select_service_type'})
+                    return {'step': 'select_service_type'}
+
+        
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
 
