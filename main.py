@@ -1191,17 +1191,63 @@ def handle_get_domain_email(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 def handle_ask_another_service(prompt, user_data, phone_id):
-    if "yes" in prompt.lower():
-        update_user_state(user_data['sender'], {'step': 'welcome'})
-        return handle_welcome("", {'sender': user_data['sender']}, phone_id)
-    else:
-        send_message(
-            "Thank you for using Contessasoft Services! We'll be in touch soon. "
-            "Type 'hi' anytime if you need assistance.",
-            user_data['sender'],
-            phone_id
-        )
-        update_user_state(user_data['sender'], {'step': 'welcome'})
+    try:
+        # Determine user's choice from button selection
+        if "yes" in prompt.lower() or "✅" in prompt:
+            update_user_state(user_data['sender'], {'step': 'welcome'})
+            return handle_welcome("", {'sender': user_data['sender']}, phone_id)
+        elif "no" in prompt.lower() or "❌" in prompt:
+            send_button_message(
+                "🌟 Thank you for using Contessasoft Services! 🌟\n\n"
+                "We'll be in touch soon. Would you like to:",
+                ["🔄 Start Over", "🚪 Exit Chat"],
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'final_choice'})
+            return {'step': 'final_choice'}
+        else:
+            # If we get an unrecognized response, show buttons again
+            send_button_message(
+                "Would you like to request another service?",
+                ["✅ Yes, Another Service", "❌ No, I'm Done"],
+                user_data['sender'],
+                phone_id
+            )
+            return {'step': 'ask_another_service'}
+
+    except Exception as e:
+        logging.error(f"Error in handle_ask_another_service: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+
+# Add this new handler for the final choice
+def handle_final_choice(prompt, user_data, phone_id):
+    try:
+        if "start" in prompt.lower() or "🔄" in prompt:
+            update_user_state(user_data['sender'], {'step': 'welcome'})
+            return handle_welcome("", {'sender': user_data['sender']}, phone_id)
+        elif "exit" in prompt.lower() or "🚪" in prompt:
+            send_message(
+                "Thank you for chatting with us! Type 'hi' anytime if you need assistance. Have a great day! 👋",
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'welcome'})
+            return {'step': 'welcome'}
+        else:
+            send_button_message(
+                "Please select an option:",
+                ["🔄 Start Over", "🚪 Exit Chat"],
+                user_data['sender'],
+                phone_id
+            )
+            return {'step': 'final_choice'}
+
+    except Exception as e:
+        logging.error(f"Error in handle_final_choice: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
 def send_message_to_agent(user, phone_id):
