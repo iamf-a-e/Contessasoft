@@ -816,7 +816,7 @@ def get_action(current_state, prompt, user_data, phone_id):
 def message_handler(prompt, sender, phone_id):
     text = prompt.strip().lower()
 
-    if text in ["hi", "hello", "hey", "start"]:
+    if text in ["hi", "hello", "hie",  "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
