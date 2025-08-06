@@ -25,36 +25,36 @@ redis_url = os.environ.get("REDIS_URL")
 redis_client = redis.StrictRedis.from_url(redis_url, decode_responses=True)
 
 class ServiceType(Enum):
-    CHATBOTS = "Chatbots"
-    DOMAIN_HOSTING = "Domain Registration & Web Hosting"
-    WEBSITE_DEV = "Website Development"
-    MOBILE_APP_DEV = "Mobile App Development"
-    OTHER = "Other Services"
+    CHATBOTS = "🤖 Chatbots"
+    DOMAIN_HOSTING = "🌐 Domain & Hosting"
+    WEBSITE_DEV = "💻 Website Development"
+    MOBILE_APP_DEV = "📱 Mobile App Development"
+    OTHER = "✨ Other Services"
 
 class ChatbotService(Enum):
-    APPOINTMENT = "Appointment bookings"
-    SALES_ORDER = "Sales & order processing"
-    LOAN_MGMT = "Loan management"
-    SURVEYS = "Customer satisfaction surveys"
-    PROPERTY = "Property & stands inquiries"
-    AI_SUPPORT = "AI-powered chat support"
-    UTILITY = "Council Utility payments"
-    TICKETING = "Event ticketing bots"
-    ECOMMERCE = "E-commerce bots"
-    HR = "HR & recruitment bots"
-    TRAVEL = "Travel & booking bots"
-    VOTING = "Voting & polling bots"
-    COMPLAINT = "Complaint management bots"
-    EDUCATION = "Educational bots"
-    RESTAURANT = "Restaurant ordering bots"
+    APPOINTMENT = "📅 Appointment Bookings"
+    SALES_ORDER = "🛒 Sales & Order Processing"
+    LOAN_MGMT = "💰 Loan Management"
+    SURVEYS = "📊 Customer Surveys"
+    PROPERTY = "🏠 Property Inquiries"
+    AI_SUPPORT = "🤖 AI Chat Support"
+    UTILITY = "💡 Utility Payments"
+    TICKETING = "🎟️ Event Ticketing"
+    ECOMMERCE = "🛍️ E-commerce Bots"
+    HR = "👥 HR & Recruitment"
+    TRAVEL = "✈️ Travel Booking"
+    VOTING = "🗳️ Voting & Polling"
+    COMPLAINT = "📝 Complaint Management"
+    EDUCATION = "🎓 Educational Bots"
+    RESTAURANT = "🍽️ Restaurant Ordering"
 
 class MobileAppType(Enum):
-    IOS = "iOS App"
-    ANDROID = "Android App"
-    HYBRID = "Hybrid (iOS & Android)"
-    GAME = "Mobile Game"
-    ENTERPRISE = "Enterprise App"
-    OTHER = "Other"
+    IOS = "🍏 iOS App"
+    ANDROID = "🤖 Android App"
+    HYBRID = "📱 Hybrid (iOS & Android)"
+    GAME = "🎮 Mobile Game"
+    ENTERPRISE = "🏢 Enterprise App"
+    OTHER = "❓ Other App Type"
 
 class User:
     def __init__(self, name, phone):
@@ -121,7 +121,6 @@ def send_message(text, recipient, phone_id):
         'Content-Type': 'application/json'
     }
     
-    # Check if the text is too long and needs to be split
     if len(text) > 3000:
         parts = [text[i:i+3000] for i in range(0, len(text), 3000)]
         for part in parts:
@@ -149,7 +148,6 @@ def send_message(text, recipient, phone_id):
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send message: {e}")
 
-
 def send_button_message(text, buttons, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
@@ -157,29 +155,13 @@ def send_button_message(text, buttons, recipient, phone_id):
         'Content-Type': 'application/json'
     }
     
-    # Button titles with emojis
-    emoji_buttons = {
-        "App Development": "📱 App Development",
-        "Domain Hosting": "🌐 Domain Hosting",
-        "Other": "✨ Other Services",
-        "Chatbots": "🤖 Chatbots",
-        "Website Dev": "💻 Website Dev",
-        "Mobile App": "📲 Mobile App",
-        "Register": "✅ Register",
-        "Transfer to Agent": "👨‍💼 Transfer to Agent",
-        "Check Another": "🔄 Check Another"
-    }
-    
     button_items = []
     for i, button in enumerate(buttons[:3]):  # WhatsApp allows max 3 buttons
-        # Use emoji version if available, otherwise use original
-        button_title = emoji_buttons.get(button, button)
-        
         button_items.append({
             "type": "reply",
             "reply": {
                 "id": f"button_{i+1}",
-                "title": button_title
+                "title": button
             }
         })
     
@@ -203,7 +185,6 @@ def send_button_message(text, buttons, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send button message: {e}")
-        
 
 def send_list_message(text, options, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -238,21 +219,18 @@ def send_list_message(text, options, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send list message: {e}")
-        
 
 # Handlers
 def handle_welcome(prompt, user_data, phone_id):
     welcome_msg = (
-        "🌟 Welcome to Contessasoft Services! 🌟\n\n"
-        "We offer a wide range of digital solutions. Please select a service type:\n\n"
-        "1. App Development\n"
-        "2. Domain Registration & Web Hosting\n"
-        "3. Other Services"       
+        "🌟 *Welcome to Contessasoft Services!* 🌟\n\n"
+        "We offer a wide range of digital solutions. Please select a service type:"
     )
     
-    send_button_message(
+    service_options = [service.value for service in ServiceType]
+    send_list_message(
         welcome_msg,
-        ["App Development", "Domain Hosting", "Other"],
+        service_options,
         user_data['sender'],
         phone_id
     )
@@ -262,28 +240,21 @@ def handle_welcome(prompt, user_data, phone_id):
 
 def handle_select_service_type(prompt, user_data, phone_id):
     try:
-        service_map = {
-            "1": ServiceType.CHATBOTS,
-            "2": ServiceType.DOMAIN_HOSTING,
-            "3": ServiceType.WEBSITE_DEV,
-            "4": ServiceType.MOBILE_APP_DEV,
-            "5": ServiceType.OTHER,
-            "chatbots": ServiceType.CHATBOTS,
-            "domain": ServiceType.DOMAIN_HOSTING,
-            "website": ServiceType.WEBSITE_DEV,
-            "mobile": ServiceType.MOBILE_APP_DEV,
-            "other": ServiceType.OTHER
-        }
-        
-        service_type = service_map.get(prompt.lower())
-        if not service_type:
-            send_message("Invalid selection. Please choose 1-5 or type the service name.", user_data['sender'], phone_id)
+        # Find the selected service type
+        selected_service = None
+        for service in ServiceType:
+            if prompt.lower() in service.value.lower():
+                selected_service = service
+                break
+                
+        if not selected_service:
+            send_message("Invalid selection. Please choose a service from the list.", user_data['sender'], phone_id)
             return {'step': 'select_service_type'}
         
         user = User(user_data.get('name', 'User'), user_data['sender'])
-        user.service_type = service_type
+        user.service_type = selected_service
         
-        if service_type == ServiceType.CHATBOTS:
+        if selected_service == ServiceType.CHATBOTS:
             chatbot_options = [service.value for service in ChatbotService]
             send_list_message(
                 "Select a chatbot service:",
@@ -300,9 +271,9 @@ def handle_select_service_type(prompt, user_data, phone_id):
                 'user': user.to_dict()
             }
             
-        elif service_type == ServiceType.MOBILE_APP_DEV:
+        elif selected_service == ServiceType.MOBILE_APP_DEV:
             app_types = [app_type.value for app_type in MobileAppType]
-            send_button_message(
+            send_list_message(
                 "What type of mobile app do you need?",
                 app_types,
                 user_data['sender'],
@@ -317,7 +288,7 @@ def handle_select_service_type(prompt, user_data, phone_id):
                 'user': user.to_dict()
             }
             
-        elif service_type == ServiceType.DOMAIN_HOSTING:
+        elif selected_service == ServiceType.DOMAIN_HOSTING:
             send_message("Please enter the domain name you're interested in (e.g., mybusiness.com):", 
                         user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
@@ -352,7 +323,7 @@ def handle_select_chatbot_service(prompt, user_data, phone_id):
         # Find the selected chatbot service
         selected_service = None
         for service in ChatbotService:
-            if prompt.lower() in service.value.lower() or prompt == str(list(ChatbotService).index(service)+1):
+            if prompt.lower() in service.value.lower():
                 selected_service = service
                 break
                 
@@ -367,8 +338,19 @@ def handle_select_chatbot_service(prompt, user_data, phone_id):
         user.chatbot_service = selected_service
         
         if selected_service == ChatbotService.APPOINTMENT:
-            send_message("Please enter the type of appointment (e.g., 'Salon booking', 'Doctor visit'):", 
-                         user_data['sender'], phone_id)
+            appointment_types = [
+                "💇 Salon Booking",
+                "🏥 Doctor Visit",
+                "🍽️ Restaurant Reservation",
+                "✂️ Barber Appointment",
+                "👔 Business Meeting"
+            ]
+            send_list_message(
+                "Select appointment type:",
+                appointment_types,
+                user_data['sender'],
+                phone_id
+            )
             update_user_state(user_data['sender'], {
                 'step': 'get_appointment_type',
                 'user': user.to_dict()
@@ -379,8 +361,19 @@ def handle_select_chatbot_service(prompt, user_data, phone_id):
             }
                 
         elif selected_service == ChatbotService.SALES_ORDER:
-            send_message("Please describe the products or services you want to sell:", 
-                         user_data['sender'], phone_id)
+            product_categories = [
+                "🛍️ Retail Products",
+                "🍽️ Food & Beverage",
+                "📱 Electronics",
+                "👕 Fashion & Apparel",
+                "🏠 Home & Garden"
+            ]
+            send_list_message(
+                "Select your product category:",
+                product_categories,
+                user_data['sender'],
+                phone_id
+            )
             update_user_state(user_data['sender'], {
                 'step': 'get_order_details',
                 'user': user.to_dict()
@@ -391,8 +384,19 @@ def handle_select_chatbot_service(prompt, user_data, phone_id):
             }
                 
         elif selected_service == ChatbotService.LOAN_MGMT:
-            send_message("Please specify the type of loan management needed (e.g., 'Microfinance', 'Bank loans'):", 
-                         user_data['sender'], phone_id)
+            loan_types = [
+                "💰 Microfinance",
+                "🏦 Bank Loans",
+                "🏠 Mortgage",
+                "🚗 Vehicle Loan",
+                "🎓 Education Loan"
+            ]
+            send_list_message(
+                "Select loan type:",
+                loan_types,
+                user_data['sender'],
+                phone_id
+            )
             update_user_state(user_data['sender'], {
                 'step': 'get_loan_details',
                 'user': user.to_dict()
@@ -426,7 +430,7 @@ def handle_select_app_type(prompt, user_data, phone_id):
         # Find the selected app type
         selected_type = None
         for app_type in MobileAppType:
-            if prompt.lower() in app_type.value.lower() or prompt == str(list(MobileAppType).index(app_type)+1):
+            if prompt.lower() in app_type.value.lower():
                 selected_type = app_type
                 break
                 
@@ -439,8 +443,21 @@ def handle_select_app_type(prompt, user_data, phone_id):
             }
             
         user.mobile_app_type = selected_type
-        send_message(f"Please describe your {selected_type.value} requirements:", 
-                     user_data['sender'], phone_id)
+        
+        features = [
+            "📱 Basic App",
+            "🛒 E-commerce",
+            "🗺️ Location Services",
+            "💳 Payment Gateway",
+            "📊 Analytics Dashboard"
+        ]
+        send_list_message(
+            f"Select features for your {selected_type.value}:",
+            features,
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_app_requirements',
             'user': user.to_dict()
@@ -464,24 +481,15 @@ def handle_get_domain_query(prompt, user_data, phone_id):
         domain_available = random.choice([True, False])
         
         if domain_available:
-            message = (
-                f"🎉 Great news! {prompt} is available!\n\n"
-                "Would you like to:\n"
-                "1. Register this domain now\n"
-                "2. Transfer to a sales agent\n"
-                "3. Check another domain"
-            )
+            message = f"🎉 Great news! {prompt} is available!"
+            buttons = ["✅ Register Now", "👨‍💼 Talk to Agent", "🔍 Check Another"]
         else:
-            message = (
-                f"😞 {prompt} is already taken. Would you like to:\n"
-                "1. Check similar available domains\n"
-                "2. Transfer to a sales agent\n"
-                "3. Check another domain"
-            )
+            message = f"😞 {prompt} is already taken."
+            buttons = ["🔍 Similar Domains", "👨‍💼 Talk to Agent", "🔄 Check Another"]
             
         send_button_message(
             message,
-            ["Register", "Transfer to Agent", "Check Another"],
+            buttons,
             user_data['sender'],
             phone_id
         )
@@ -506,11 +514,11 @@ def handle_get_other_request(prompt, user_data, phone_id):
         user.other_request = prompt
         
         # Transfer to human agent
-        send_message_to_agent(user)
+        send_message_to_agent(user, phone_id)
         
-        send_message(
-            "Thank you! Your request has been forwarded to our team. "
-            "An agent will contact you shortly. Would you like to request another service? (yes/no)",
+        send_button_message(
+            "Thank you! Your request has been forwarded to our team. Would you like to request another service?",
+            ["✅ Yes", "❌ No"],
             user_data['sender'],
             phone_id
         )
@@ -534,8 +542,20 @@ def handle_get_appointment_type(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.appointment_details['type'] = prompt
         
-        send_message("Please enter preferred date and time (e.g., 'June 15 at 2pm'):", 
-                     user_data['sender'], phone_id)
+        time_slots = [
+            "🕘 9:00 AM - 11:00 AM",
+            "🕛 11:00 AM - 1:00 PM",
+            "🕑 2:00 PM - 4:00 PM",
+            "🕔 4:00 PM - 6:00 PM",
+            "🕗 6:00 PM - 8:00 PM"
+        ]
+        send_list_message(
+            "Select preferred time slot:",
+            time_slots,
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_appointment_time',
             'user': user.to_dict()
@@ -555,8 +575,20 @@ def handle_get_appointment_time(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.appointment_details['time'] = prompt
         
-        send_message("Please enter any additional notes for the appointment:", 
-                     user_data['sender'], phone_id)
+        notes_options = [
+            "None",
+            "Wheelchair Access Needed",
+            "Prefer Female Specialist",
+            "Bring Documents",
+            "Special Dietary Requirements"
+        ]
+        send_list_message(
+            "Select any additional notes:",
+            notes_options,
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_appointment_notes',
             'user': user.to_dict()
@@ -576,16 +608,20 @@ def handle_get_appointment_notes(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.appointment_details['notes'] = prompt
         
-        # Confirm appointment details
         confirm_msg = (
-            "Please confirm your appointment booking:\n\n"
+            "📅 *Appointment Summary*\n\n"
             f"Type: {user.appointment_details['type']}\n"
             f"Time: {user.appointment_details['time']}\n"
-            f"Notes: {user.appointment_details.get('notes', 'None')}\n\n"
-            "Is this correct? (yes/no)"
+            f"Notes: {user.appointment_details.get('notes', 'None')}"
         )
         
-        send_message(confirm_msg, user_data['sender'], phone_id)
+        send_button_message(
+            confirm_msg,
+            ["✅ Confirm Booking", "✏️ Edit Details"],
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'confirm_appointment',
             'user': user.to_dict()
@@ -602,7 +638,7 @@ def handle_get_appointment_notes(prompt, user_data, phone_id):
 
 def handle_confirm_appointment(prompt, user_data, phone_id):
     try:
-        if prompt.lower() in ['yes', 'y']:
+        if "confirm" in prompt.lower():
             user = User.from_dict(user_data['user'])
             
             # Generate appointment ID
@@ -610,24 +646,28 @@ def handle_confirm_appointment(prompt, user_data, phone_id):
             
             # Send confirmation to user
             confirm_msg = (
-                "🎉 Your appointment has been booked!\n\n"
-                f"Appointment ID: {appointment_id}\n"
-                f"Type: {user.appointment_details['type']}\n"
-                f"Time: {user.appointment_details['time']}\n\n"
-                "An agent will contact you shortly to confirm details. "
-                "Would you like to request another service? (yes/no)"
+                "🎉 *Appointment Confirmed!*\n\n"
+                f"📋 ID: {appointment_id}\n"
+                f"📅 Type: {user.appointment_details['type']}\n"
+                f"🕒 Time: {user.appointment_details['time']}\n\n"
+                "An agent will contact you shortly to confirm details."
             )
             
-            send_message(confirm_msg, user_data['sender'], phone_id)
+            send_button_message(
+                confirm_msg,
+                ["✅ Request Another Service", "❌ Done"],
+                user_data['sender'],
+                phone_id
+            )
             
             # Notify admin
             admin_msg = (
-                "New Appointment Booking\n\n"
-                f"Client: {user.name} ({user.phone})\n"
-                f"Appointment ID: {appointment_id}\n"
-                f"Type: {user.appointment_details['type']}\n"
-                f"Time: {user.appointment_details['time']}\n"
-                f"Notes: {user.appointment_details.get('notes', 'None')}"
+                "📋 *New Appointment Booking*\n\n"
+                f"👤 Client: {user.name} ({user.phone})\n"
+                f"📋 ID: {appointment_id}\n"
+                f"📅 Type: {user.appointment_details['type']}\n"
+                f"🕒 Time: {user.appointment_details['time']}\n"
+                f"📝 Notes: {user.appointment_details.get('notes', 'None')}"
             )
             send_message(admin_msg, owner_phone, phone_id)
             
@@ -641,7 +681,7 @@ def handle_confirm_appointment(prompt, user_data, phone_id):
             }
             
         else:
-            send_message("Let's try again. Please enter the appointment type:", 
+            send_message("Let's start over. Select appointment type:", 
                          user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
                 'step': 'get_appointment_type',
@@ -660,10 +700,21 @@ def handle_confirm_appointment(prompt, user_data, phone_id):
 def handle_get_order_details(prompt, user_data, phone_id):
     try:
         user = User.from_dict(user_data['user'])
-        user.order_details['description'] = prompt
+        user.order_details['category'] = prompt
         
-        send_message("Please enter the estimated number of products:", 
-                     user_data['sender'], phone_id)
+        quantity_options = [
+            "1-10 products",
+            "11-50 products",
+            "51-100 products",
+            "100+ products"
+        ]
+        send_list_message(
+            "Select estimated product quantity:",
+            quantity_options,
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_order_quantity',
             'user': user.to_dict()
@@ -683,8 +734,13 @@ def handle_get_order_quantity(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.order_details['quantity'] = prompt
         
-        send_message("Do you need payment integration? (yes/no)", 
-                     user_data['sender'], phone_id)
+        send_button_message(
+            "Do you need payment integration?",
+            ["💳 Yes, with Payment", "🚫 No Payment Needed"],
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_payment_integration',
             'user': user.to_dict()
@@ -702,18 +758,22 @@ def handle_get_order_quantity(prompt, user_data, phone_id):
 def handle_get_payment_integration(prompt, user_data, phone_id):
     try:
         user = User.from_dict(user_data['user'])
-        user.order_details['payment_integration'] = prompt.lower() in ['yes', 'y']
+        user.order_details['payment_integration'] = "yes" in prompt.lower()
         
-        # Confirm order details
         confirm_msg = (
-            "Please confirm your order processing requirements:\n\n"
-            f"Products: {user.order_details['description']}\n"
-            f"Quantity: {user.order_details['quantity']}\n"
-            f"Payment Integration: {'Yes' if user.order_details['payment_integration'] else 'No'}\n\n"
-            "Is this correct? (yes/no)"
+            "🛒 *Order Summary*\n\n"
+            f"📦 Category: {user.order_details['category']}\n"
+            f"🔢 Quantity: {user.order_details['quantity']}\n"
+            f"💳 Payment: {'Yes' if user.order_details['payment_integration'] else 'No'}"
         )
         
-        send_message(confirm_msg, user_data['sender'], phone_id)
+        send_button_message(
+            confirm_msg,
+            ["✅ Confirm Order", "✏️ Edit Details"],
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'confirm_order_details',
             'user': user.to_dict()
@@ -730,7 +790,7 @@ def handle_get_payment_integration(prompt, user_data, phone_id):
 
 def handle_confirm_order_details(prompt, user_data, phone_id):
     try:
-        if prompt.lower() in ['yes', 'y']:
+        if "confirm" in prompt.lower():
             user = User.from_dict(user_data['user'])
             
             # Generate order ID
@@ -738,25 +798,29 @@ def handle_confirm_order_details(prompt, user_data, phone_id):
             
             # Send confirmation to user
             confirm_msg = (
-                "🎉 Your order processing request has been received!\n\n"
-                f"Order ID: {order_id}\n"
-                f"Products: {user.order_details['description']}\n"
-                f"Quantity: {user.order_details['quantity']}\n"
-                f"Payment Integration: {'Yes' if user.order_details['payment_integration'] else 'No'}\n\n"
-                "An agent will contact you shortly to discuss next steps. "
-                "Would you like to request another service? (yes/no)"
+                "🎉 *Order Request Received!*\n\n"
+                f"📋 ID: {order_id}\n"
+                f"📦 Category: {user.order_details['category']}\n"
+                f"🔢 Quantity: {user.order_details['quantity']}\n"
+                f"💳 Payment: {'Yes' if user.order_details['payment_integration'] else 'No'}\n\n"
+                "An agent will contact you shortly."
             )
             
-            send_message(confirm_msg, user_data['sender'], phone_id)
+            send_button_message(
+                confirm_msg,
+                ["✅ Request Another Service", "❌ Done"],
+                user_data['sender'],
+                phone_id
+            )
             
             # Notify admin
             admin_msg = (
-                "New Order Processing Request\n\n"
-                f"Client: {user.name} ({user.phone})\n"
-                f"Order ID: {order_id}\n"
-                f"Products: {user.order_details['description']}\n"
-                f"Quantity: {user.order_details['quantity']}\n"
-                f"Payment Integration: {'Yes' if user.order_details['payment_integration'] else 'No'}"
+                "🛒 *New Order Request*\n\n"
+                f"👤 Client: {user.name} ({user.phone})\n"
+                f"📋 ID: {order_id}\n"
+                f"📦 Category: {user.order_details['category']}\n"
+                f"🔢 Quantity: {user.order_details['quantity']}\n"
+                f"💳 Payment: {'Yes' if user.order_details['payment_integration'] else 'No'}"
             )
             send_message(admin_msg, owner_phone, phone_id)
             
@@ -770,7 +834,7 @@ def handle_confirm_order_details(prompt, user_data, phone_id):
             }
             
         else:
-            send_message("Let's try again. Please describe the products or services you want to sell:", 
+            send_message("Let's start over. Select product category:", 
                          user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
                 'step': 'get_order_details',
@@ -791,8 +855,19 @@ def handle_get_loan_details(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.loan_details['type'] = prompt
         
-        send_message("Please enter the estimated loan amount range (e.g., '$1000-$5000'):", 
-                     user_data['sender'], phone_id)
+        amount_ranges = [
+            "$1,000 - $5,000",
+            "$5,001 - $10,000",
+            "$10,001 - $50,000",
+            "$50,000+"
+        ]
+        send_list_message(
+            "Select loan amount range:",
+            amount_ranges,
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_loan_amount',
             'user': user.to_dict()
@@ -812,8 +887,13 @@ def handle_get_loan_amount(prompt, user_data, phone_id):
         user = User.from_dict(user_data['user'])
         user.loan_details['amount'] = prompt
         
-        send_message("Do you need automated payment reminders? (yes/no)", 
-                     user_data['sender'], phone_id)
+        send_button_message(
+            "Do you need automated payment reminders?",
+            ["🔔 Yes, Send Reminders", "🚫 No Reminders Needed"],
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'get_reminder_preference',
             'user': user.to_dict()
@@ -831,18 +911,22 @@ def handle_get_loan_amount(prompt, user_data, phone_id):
 def handle_get_reminder_preference(prompt, user_data, phone_id):
     try:
         user = User.from_dict(user_data['user'])
-        user.loan_details['reminders'] = prompt.lower() in ['yes', 'y']
+        user.loan_details['reminders'] = "yes" in prompt.lower()
         
-        # Confirm loan details
         confirm_msg = (
-            "Please confirm your loan management requirements:\n\n"
-            f"Loan Type: {user.loan_details['type']}\n"
-            f"Amount Range: {user.loan_details['amount']}\n"
-            f"Payment Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}\n\n"
-            "Is this correct? (yes/no)"
+            "💰 *Loan Summary*\n\n"
+            f"🏦 Type: {user.loan_details['type']}\n"
+            f"💵 Amount: {user.loan_details['amount']}\n"
+            f"🔔 Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}"
         )
         
-        send_message(confirm_msg, user_data['sender'], phone_id)
+        send_button_message(
+            confirm_msg,
+            ["✅ Confirm Loan Request", "✏️ Edit Details"],
+            user_data['sender'],
+            phone_id
+        )
+        
         update_user_state(user_data['sender'], {
             'step': 'confirm_loan_details',
             'user': user.to_dict()
@@ -859,7 +943,7 @@ def handle_get_reminder_preference(prompt, user_data, phone_id):
 
 def handle_confirm_loan_details(prompt, user_data, phone_id):
     try:
-        if prompt.lower() in ['yes', 'y']:
+        if "confirm" in prompt.lower():
             user = User.from_dict(user_data['user'])
             
             # Generate loan request ID
@@ -867,25 +951,29 @@ def handle_confirm_loan_details(prompt, user_data, phone_id):
             
             # Send confirmation to user
             confirm_msg = (
-                "🎉 Your loan management request has been received!\n\n"
-                f"Request ID: {request_id}\n"
-                f"Loan Type: {user.loan_details['type']}\n"
-                f"Amount Range: {user.loan_details['amount']}\n"
-                f"Payment Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}\n\n"
-                "An agent will contact you shortly to discuss next steps. "
-                "Would you like to request another service? (yes/no)"
+                "🎉 *Loan Request Received!*\n\n"
+                f"📋 ID: {request_id}\n"
+                f"🏦 Type: {user.loan_details['type']}\n"
+                f"💵 Amount: {user.loan_details['amount']}\n"
+                f"🔔 Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}\n\n"
+                "An agent will contact you shortly."
             )
             
-            send_message(confirm_msg, user_data['sender'], phone_id)
+            send_button_message(
+                confirm_msg,
+                ["✅ Request Another Service", "❌ Done"],
+                user_data['sender'],
+                phone_id
+            )
             
             # Notify admin
             admin_msg = (
-                "New Loan Management Request\n\n"
-                f"Client: {user.name} ({user.phone})\n"
-                f"Request ID: {request_id}\n"
-                f"Loan Type: {user.loan_details['type']}\n"
-                f"Amount Range: {user.loan_details['amount']}\n"
-                f"Payment Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}"
+                "💰 *New Loan Request*\n\n"
+                f"👤 Client: {user.name} ({user.phone})\n"
+                f"📋 ID: {request_id}\n"
+                f"🏦 Type: {user.loan_details['type']}\n"
+                f"💵 Amount: {user.loan_details['amount']}\n"
+                f"🔔 Reminders: {'Yes' if user.loan_details['reminders'] else 'No'}"
             )
             send_message(admin_msg, owner_phone, phone_id)
             
@@ -899,7 +987,7 @@ def handle_confirm_loan_details(prompt, user_data, phone_id):
             }
             
         else:
-            send_message("Let's try again. Please specify the type of loan management needed:", 
+            send_message("Let's start over. Select loan type:", 
                          user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
                 'step': 'get_loan_details',
@@ -922,15 +1010,15 @@ def handle_get_chatbot_details(prompt, user_data, phone_id):
         
         # Transfer to human agent with all details
         agent_msg = (
-            f"New {service_type} Request\n\n"
-            f"Client: {user.name} ({user.phone})\n"
-            f"Requirements: {prompt}"
+            f"🤖 *New {service_type} Request*\n\n"
+            f"👤 Client: {user.name} ({user.phone})\n"
+            f"📝 Requirements: {prompt}"
         )
         send_message(agent_msg, owner_phone, phone_id)
         
-        send_message(
-            f"Thank you for your {service_type} request! An agent will contact you shortly. "
-            "Would you like to request another service? (yes/no)",
+        send_button_message(
+            f"Thank you for your {service_type} request! Would you like to request another service?",
+            ["✅ Yes", "❌ No"],
             user_data['sender'],
             phone_id
         )
@@ -956,15 +1044,15 @@ def handle_get_app_requirements(prompt, user_data, phone_id):
         
         # Transfer to human agent with all details
         agent_msg = (
-            f"New {app_type} Development Request\n\n"
-            f"Client: {user.name} ({user.phone})\n"
-            f"Requirements: {prompt}"
+            f"📱 *New {app_type} Request*\n\n"
+            f"👤 Client: {user.name} ({user.phone})\n"
+            f"📝 Requirements: {prompt}"
         )
         send_message(agent_msg, owner_phone, phone_id)
         
-        send_message(
-            f"Thank you for your {app_type} development request! An agent will contact you shortly. "
-            "Would you like to request another service? (yes/no)",
+        send_button_message(
+            f"Thank you for your {app_type} request! Would you like to request another service?",
+            ["✅ Yes", "❌ No"],
             user_data['sender'],
             phone_id
         )
@@ -987,7 +1075,7 @@ def handle_domain_response(prompt, user_data, phone_id):
     try:
         user = User.from_dict(user_data['user'])
         
-        if prompt.lower() in ['1', 'register']:
+        if "register" in prompt.lower():
             send_message(
                 "Please provide your email address to complete domain registration:",
                 user_data['sender'],
@@ -1002,11 +1090,11 @@ def handle_domain_response(prompt, user_data, phone_id):
                 'user': user.to_dict()
             }
             
-        elif prompt.lower() in ['2', 'transfer']:
-            send_message_to_agent(user)
-            send_message(
-                "A sales agent will contact you shortly about your domain query. "
-                "Would you like to request another service? (yes/no)",
+        elif "agent" in prompt.lower():
+            send_message_to_agent(user, phone_id)
+            send_button_message(
+                "A sales agent will contact you shortly. Would you like to request another service?",
+                ["✅ Yes", "❌ No"],
                 user_data['sender'],
                 phone_id
             )
@@ -1019,7 +1107,7 @@ def handle_domain_response(prompt, user_data, phone_id):
                 'user': user.to_dict()
             }
             
-        elif prompt.lower() in ['3', 'check another']:
+        elif "another" in prompt.lower() or "check" in prompt.lower():
             send_message(
                 "Please enter another domain name to check (e.g., mybusiness.com):",
                 user_data['sender'],
@@ -1035,7 +1123,7 @@ def handle_domain_response(prompt, user_data, phone_id):
             }
             
         else:
-            send_message("Invalid option. Please choose 1-3.", user_data['sender'], phone_id)
+            send_message("Invalid option. Please choose from the buttons.", user_data['sender'], phone_id)
             return {
                 'step': 'handle_domain_response',
                 'user': user.to_dict()
@@ -1055,21 +1143,20 @@ def handle_get_domain_email(prompt, user_data, phone_id):
         reg_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
         
         # Send confirmation
-        send_message(
-            f"Thank you! Your domain registration request (ID: {reg_id}) has been received. "
-            "An agent will contact you shortly to complete the process. "
-            "Would you like to request another service? (yes/no)",
+        send_button_message(
+            f"Thank you! Your domain registration request (ID: {reg_id}) has been received. Would you like to request another service?",
+            ["✅ Yes", "❌ No"],
             user_data['sender'],
             phone_id
         )
         
         # Notify admin
         admin_msg = (
-            f"New Domain Registration Request\n\n"
-            f"Client: {user.name} ({user.phone})\n"
-            f"Request ID: {reg_id}\n"
-            f"Domain: {user.domain_query}\n"
-            f"Email: {prompt}"
+            f"🌐 *New Domain Registration*\n\n"
+            f"👤 Client: {user.name} ({user.phone})\n"
+            f"📋 ID: {reg_id}\n"
+            f"🌍 Domain: {user.domain_query}\n"
+            f"📧 Email: {prompt}"
         )
         send_message(admin_msg, owner_phone, phone_id)
         
@@ -1088,7 +1175,7 @@ def handle_get_domain_email(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 def handle_ask_another_service(prompt, user_data, phone_id):
-    if prompt.lower() in ['yes', 'y']:
+    if "yes" in prompt.lower():
         update_user_state(user_data['sender'], {'step': 'welcome'})
         return handle_welcome("", {'sender': user_data['sender']}, phone_id)
     else:
@@ -1104,29 +1191,29 @@ def handle_ask_another_service(prompt, user_data, phone_id):
 def send_message_to_agent(user, phone_id):
     try:
         # Format the message to send to agent
-        message = f"New client request from {user.name} ({user.phone}):\n\n"
+        message = f"👤 *New Client Request*\n\nFrom: {user.name} ({user.phone})\n\n"
         
         if user.service_type:
-            message += f"Service Type: {user.service_type.value}\n"
+            message += f"📋 Service: {user.service_type.value}\n"
             
             if user.service_type == ServiceType.CHATBOTS and user.chatbot_service:
-                message += f"Chatbot Service: {user.chatbot_service.value}\n"
+                message += f"🤖 Chatbot Type: {user.chatbot_service.value}\n"
                 
                 if user.chatbot_service == ChatbotService.APPOINTMENT and user.appointment_details:
-                    message += f"Appointment Details: {user.appointment_details}\n"
+                    message += f"📅 Appointment: {user.appointment_details}\n"
                 elif user.chatbot_service == ChatbotService.SALES_ORDER and user.order_details:
-                    message += f"Order Details: {user.order_details}\n"
+                    message += f"🛒 Order Details: {user.order_details}\n"
                 elif user.chatbot_service == ChatbotService.LOAN_MGMT and user.loan_details:
-                    message += f"Loan Details: {user.loan_details}\n"
+                    message += f"💰 Loan Details: {user.loan_details}\n"
                     
             elif user.service_type == ServiceType.MOBILE_APP_DEV and user.mobile_app_type:
-                message += f"App Type: {user.mobile_app_type.value}\n"
+                message += f"📱 App Type: {user.mobile_app_type.value}\n"
                 
             elif user.service_type == ServiceType.DOMAIN_HOSTING and user.domain_query:
-                message += f"Domain Query: {user.domain_query}\n"
+                message += f"🌍 Domain: {user.domain_query}\n"
                 
             elif user.service_type == ServiceType.OTHER and user.other_request:
-                message += f"Request: {user.other_request}\n"
+                message += f"📝 Request: {user.other_request}\n"
         
         # Send to agent
         send_message(message, owner_phone, phone_id)
@@ -1182,8 +1269,6 @@ def message_handler(prompt, sender, phone_id):
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
 
-
-
 @app.route("/", methods=["GET"])
 def index():
     return render_template("connected.html")
@@ -1223,7 +1308,7 @@ def webhook():
                     list_response = message["interactive"]["list_reply"]["title"]
                     message_handler(list_response, sender, phone_id)
                 else:
-                    send_message("Please send a text message or select an option", sender, phone_id)
+                    send_message("Please select an option from the buttons", sender, phone_id)
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
 
