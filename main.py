@@ -1181,21 +1181,44 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    text = prompt.strip().lower()
-
-    if text in ["hi", "hello", "hey", "start"]:
+    # Clean the prompt by removing emojis and normalizing
+    clean_prompt = prompt.lower().strip()
+    clean_prompt = clean_prompt.replace("📱", "").replace("🌐", "").replace("✨", "").replace("🤖", "").strip()
+    
+    # Handle special commands
+    if clean_prompt in ["hi", "hello", "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
         return
-
+    
+    # Get current user state
     user_state = get_user_state(sender)
     user_state['sender'] = sender
-
+    
+    # Handle button responses by mapping to expected values
+    button_mappings = {
+        "app development": "1",
+        "domain hosting": "2",
+        "other": "3",
+        "register": "1",
+        "transfer to agent": "2",
+        "check another": "3",
+        # Add other button mappings as needed
+    }
+    
+    # Check if prompt matches any button text
+    normalized_prompt = clean_prompt.replace(" ", "_")
+    for button_text, mapped_value in button_mappings.items():
+        if button_text in clean_prompt or normalized_prompt in button_text:
+            prompt = mapped_value
+            break
+    
+    # Get current step and process action
     step = user_state.get('step') or 'welcome'
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
-
+    
 
 
 @app.route("/", methods=["GET"])
@@ -1227,21 +1250,34 @@ def webhook():
                 message = messages[0]
                 sender = message["from"]
 
-                if "text" in message:
-                    prompt = message["text"]["body"].strip()
-                    message_handler(prompt, sender, phone_id)
-                elif "button" in message:
-                    button_response = message["button"]["text"]
+                # Handle button replies
+                if message.get("type") == "interactive" and message["interactive"].get("type") == "button_reply":
+                    button_response = message["interactive"]["button_reply"]["title"]
                     message_handler(button_response, sender, phone_id)
-                elif "interactive" in message and message["interactive"]["type"] == "list_reply":
+                    return jsonify({"status": "ok"}), 200
+                
+                # Handle list replies
+                elif message.get("type") == "interactive" and message["interactive"].get("type") == "list_reply":
                     list_response = message["interactive"]["list_reply"]["title"]
                     message_handler(list_response, sender, phone_id)
+                    return jsonify({"status": "ok"}), 200
+                
+                # Handle regular text messages
+                elif "text" in message:
+                    prompt = message["text"]["body"].strip()
+                    message_handler(prompt, sender, phone_id)
+                    return jsonify({"status": "ok"}), 200
+                
                 else:
                     send_message("Please send a text message or select an option", sender, phone_id)
+                    return jsonify({"status": "ok"}), 200
+
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
+            return jsonify({"status": "error"}), 500
 
         return jsonify({"status": "ok"}), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
