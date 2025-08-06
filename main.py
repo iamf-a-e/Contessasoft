@@ -236,7 +236,7 @@ def handle_welcome(prompt, user_data, phone_id):
     
     send_button_message(
         welcome_msg,
-        ["Chatbots", "Domain Hosting", "Website Dev", "Mobile App", "Other"],
+        ["App Development", "Domain Hosting", "Other"],
         user_data['sender'],
         phone_id
     )
