@@ -148,7 +148,6 @@ def send_message(text, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send message: {e}")
-
 def send_button_message(text, buttons, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
@@ -156,13 +155,29 @@ def send_button_message(text, buttons, recipient, phone_id):
         'Content-Type': 'application/json'
     }
     
+    # Button titles with emojis
+    emoji_buttons = {
+        "App Development": "📱 App Development",
+        "Domain Hosting": "🌐 Domain Hosting",
+        "Other": "✨ Other Services",
+        "Chatbots": "🤖 Chatbots",
+        "Website Dev": "💻 Website Dev",
+        "Mobile App": "📲 Mobile App",
+        "Register": "✅ Register",
+        "Transfer to Agent": "👨‍💼 Transfer to Agent",
+        "Check Another": "🔄 Check Another"
+    }
+    
     button_items = []
     for i, button in enumerate(buttons[:3]):  # WhatsApp allows max 3 buttons
+        # Use emoji version if available, otherwise use original
+        button_title = emoji_buttons.get(button, button)
+        
         button_items.append({
             "type": "reply",
             "reply": {
                 "id": f"button_{i+1}",
-                "title": button
+                "title": button_title
             }
         })
     
@@ -186,6 +201,7 @@ def send_button_message(text, buttons, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send button message: {e}")
+        
 
 def send_list_message(text, options, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
