@@ -1163,56 +1163,100 @@ def index():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
+    # Start timer for performance monitoring
+    start_time = time.time()
+    
     if request.method == "GET":
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == "BOT":
-            return challenge, 200
-        return "Failed", 403
+        try:
+            mode = request.args.get("hub.mode")
+            token = request.args.get("hub.verify_token")
+            challenge = request.args.get("hub.challenge")
+            
+            if not all([mode, token, challenge]):
+                logging.warning("Missing GET parameters")
+                return "Invalid request", 400
+                
+            if mode == "subscribe" and token == "BOT":
+                logging.info("Webhook verified successfully")
+                return challenge, 200
+                
+            logging.warning("Webhook verification failed")
+            return "Failed", 403
+            
+        except Exception as e:
+            logging.error(f"GET verification error: {str(e)}", exc_info=True)
+            return "Server error", 500
 
     elif request.method == "POST":
-        data = request.get_json()
-        logging.info(f"Incoming webhook data: {data}")
-
         try:
+            # Validate JSON data
+            if not request.is_json:
+                logging.warning("Received non-JSON POST data")
+                return jsonify({"status": "error", "message": "Invalid content type"}), 400
+
+            data = request.get_json()
+            logging.debug(f"Raw webhook data: {data}")
+
+            # Validate webhook structure
+            if not all(key in data for key in ["entry"]):
+                logging.warning("Invalid webhook structure")
+                return jsonify({"status": "error", "message": "Invalid webhook format"}), 400
+
             entry = data["entry"][0]
             changes = entry["changes"][0]
             value = changes["value"]
-            phone_id = value["metadata"]["phone_number_id"]
+            
+            # Extract metadata with error checking
+            metadata = value.get("metadata", {})
+            phone_id = metadata.get("phone_number_id")
+            if not phone_id:
+                logging.error("Missing phone_number_id in metadata")
+                return jsonify({"status": "error", "message": "Missing phone number ID"}), 400
 
+            # Process messages
             messages = value.get("messages", [])
-            if messages:
-                message = messages[0]
-                sender = message["from"]
+            if not messages:
+                logging.info("No messages to process")
+                return jsonify({"status": "ok"}), 200
 
-                # Handle button replies
-                if message.get("type") == "interactive" and message["interactive"].get("type") == "button_reply":
-                    button_response = message["interactive"]["button_reply"]["title"]
-                    message_handler(button_response, sender, phone_id)
-                    return jsonify({"status": "ok"}), 200
-                
-                # Handle list replies
-                elif message.get("type") == "interactive" and message["interactive"].get("type") == "list_reply":
-                    list_response = message["interactive"]["list_reply"]["title"]
-                    message_handler(list_response, sender, phone_id)
-                    return jsonify({"status": "ok"}), 200
-                
-                # Handle regular text messages
-                elif "text" in message:
-                    prompt = message["text"]["body"].strip()
-                    message_handler(prompt, sender, phone_id)
-                    return jsonify({"status": "ok"}), 200
-                
-                else:
-                    send_message("Please send a text message or select an option", sender, phone_id)
-                    return jsonify({"status": "ok"}), 200
+            message = messages[0]
+            sender = message.get("from")
+            if not sender:
+                logging.error("Missing sender in message")
+                return jsonify({"status": "error", "message": "Missing sender"}), 400
 
+            # Handle different message types
+            response = None
+            if message.get("type") == "interactive":
+                interactive = message.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    response = interactive["button_reply"]["title"]
+                elif interactive.get("type") == "list_reply":
+                    response = interactive["list_reply"]["title"]
+            elif "text" in message:
+                response = message["text"]["body"].strip()
+
+            if response:
+                logging.info(f"Processing message from {sender}: {response}")
+                message_handler(response, sender, phone_id)
+            else:
+                logging.warning("Unsupported message type")
+                send_message("Please send a text message or select an option", sender, phone_id)
+
+            logging.info(f"Request processed in {time.time() - start_time:.2f}s")
+            return jsonify({"status": "ok"}), 200
+
+        except KeyError as e:
+            logging.error(f"Missing key in webhook data: {str(e)}", exc_info=True)
+            return jsonify({"status": "error", "message": f"Missing data: {str(e)}"}), 400
+            
         except Exception as e:
-            logging.error(f"Error processing webhook: {e}", exc_info=True)
-            return jsonify({"status": "error"}), 500
+            logging.error(f"Unexpected error processing webhook: {str(e)}", exc_info=True)
+            if 'sender' in locals() and 'phone_id' in locals():
+                send_message("We encountered an error. Please try again.", sender, phone_id)
+            return jsonify({"status": "error", "message": str(e)}), 500
 
-        return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "error", "message": "Method not allowed"}), 405
 
 
 if __name__ == "__main__":
