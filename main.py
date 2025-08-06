@@ -408,7 +408,7 @@ def handle_select_app_type(prompt, user_data, phone_id):
         # Find the selected app type
         selected_type = None
         for app_type in MobileAppType:
-            if prompt.lower() in app_type.value.lower() or prompt == str(list(MobileAppType).index(app_type)+1:
+            if prompt.lower() in app_type.value.lower() or prompt == str(list(MobileAppType).index(app_type)+1):
                 selected_type = app_type
                 break
                 
