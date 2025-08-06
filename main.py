@@ -262,45 +262,56 @@ def handle_welcome(prompt, user_data, phone_id):
 
 def handle_select_service_type(prompt, user_data, phone_id):
     try:
+        # Map button responses to service types
         service_map = {
-            "1": ServiceType.CHATBOTS,
-            "2": ServiceType.DOMAIN_HOSTING,
-            "3": ServiceType.WEBSITE_DEV,
-            "4": ServiceType.MOBILE_APP_DEV,
-            "5": ServiceType.OTHER,
-            "chatbots": ServiceType.CHATBOTS,
+            "1": ServiceType.MOBILE_APP_DEV,  # App Development
+            "2": ServiceType.DOMAIN_HOSTING,   # Domain Hosting
+            "3": ServiceType.OTHER,            # Other
+            "app development": ServiceType.MOBILE_APP_DEV,
+            "domain hosting": ServiceType.DOMAIN_HOSTING,
+            "other": ServiceType.OTHER,
+            # Add text variations that users might type
+            "app": ServiceType.MOBILE_APP_DEV,
+            "application": ServiceType.MOBILE_APP_DEV,
             "domain": ServiceType.DOMAIN_HOSTING,
-            "website": ServiceType.WEBSITE_DEV,
-            "mobile": ServiceType.MOBILE_APP_DEV,
-            "other": ServiceType.OTHER
+            "hosting": ServiceType.DOMAIN_HOSTING,
+            "web": ServiceType.DOMAIN_HOSTING
         }
         
-        service_type = service_map.get(prompt.lower())
+        # Clean the prompt by removing emojis if present
+        clean_prompt = prompt.lower()
+        emoji_clean = {
+            "📱": "app",
+            "🌐": "domain",
+            "✨": "other"
+        }
+        for emoji, text in emoji_clean.items():
+            clean_prompt = clean_prompt.replace(emoji, text)
+        clean_prompt = clean_prompt.strip()
+        
+        service_type = service_map.get(clean_prompt)
         if not service_type:
-            send_message("Invalid selection. Please choose 1-5 or type the service name.", user_data['sender'], phone_id)
+            # Resend buttons if invalid selection
+            welcome_msg = (
+                "🌟 Welcome to Contessasoft Services! 🌟\n\n"
+                "We offer a wide range of digital solutions. Please select a service type:\n\n"
+                "1. App Development\n"
+                "2. Domain Registration & Web Hosting\n"
+                "3. Other Services"       
+            )
+            send_button_message(
+                welcome_msg,
+                ["App Development", "Domain Hosting", "Other"],
+                user_data['sender'],
+                phone_id
+            )
             return {'step': 'select_service_type'}
         
         user = User(user_data.get('name', 'User'), user_data['sender'])
         user.service_type = service_type
         
-        if service_type == ServiceType.CHATBOTS:
-            chatbot_options = [service.value for service in ChatbotService]
-            send_list_message(
-                "Select a chatbot service:",
-                chatbot_options,
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {
-                'step': 'select_chatbot_service',
-                'user': user.to_dict()
-            })
-            return {
-                'step': 'select_chatbot_service',
-                'user': user.to_dict()
-            }
-            
-        elif service_type == ServiceType.MOBILE_APP_DEV:
+        if service_type == ServiceType.MOBILE_APP_DEV:
+            # App Development path
             app_types = [app_type.value for app_type in MobileAppType]
             send_button_message(
                 "What type of mobile app do you need?",
@@ -318,6 +329,7 @@ def handle_select_service_type(prompt, user_data, phone_id):
             }
             
         elif service_type == ServiceType.DOMAIN_HOSTING:
+            # Domain Hosting path
             send_message("Please enter the domain name you're interested in (e.g., mybusiness.com):", 
                         user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
@@ -330,6 +342,7 @@ def handle_select_service_type(prompt, user_data, phone_id):
             }
             
         else:
+            # Other Services path
             send_message("Please describe your requirements:", user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
                 'step': 'get_other_request',
@@ -344,6 +357,7 @@ def handle_select_service_type(prompt, user_data, phone_id):
         logging.error(f"Error in handle_select_service_type: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+
 
 def handle_select_chatbot_service(prompt, user_data, phone_id):
     try:
