@@ -148,6 +148,8 @@ def send_message(text, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send message: {e}")
+
+
 def send_button_message(text, buttons, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
@@ -243,11 +245,9 @@ def handle_welcome(prompt, user_data, phone_id):
     welcome_msg = (
         "🌟 Welcome to Contessasoft Services! 🌟\n\n"
         "We offer a wide range of digital solutions. Please select a service type:\n\n"
-        "1. Chatbots\n"
+        "1. App Development\n"
         "2. Domain Registration & Web Hosting\n"
-        "3. Website Development\n"
-        "4. Mobile App Development\n"
-        "5. Other Services"
+        "3. Other Services"       
     )
     
     send_button_message(
