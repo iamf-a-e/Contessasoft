@@ -12,6 +12,8 @@ from enum import Enum
 
 logging.basicConfig(level=logging.INFO)
 
+app = Flask(__name__)
+
 # Environment variables
 wa_token = os.environ.get("WA_TOKEN")
 phone_id = os.environ.get("PHONE_ID")
@@ -1164,8 +1166,7 @@ def message_handler(prompt, sender, phone_id):
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
 
-# Flask app
-app = Flask(__name__)
+
 
 @app.route("/", methods=["GET"])
 def index():
