@@ -262,101 +262,40 @@ def handle_welcome(prompt, user_data, phone_id):
 
 def handle_select_service_type(prompt, user_data, phone_id):
     try:
-        # Map button responses to service types
+        # Map all possible inputs to service types
         service_map = {
-            "1": ServiceType.MOBILE_APP_DEV,  # App Development
-            "2": ServiceType.DOMAIN_HOSTING,   # Domain Hosting
-            "3": ServiceType.OTHER,            # Other
-            "app development": ServiceType.MOBILE_APP_DEV,
-            "domain hosting": ServiceType.DOMAIN_HOSTING,
-            "other": ServiceType.OTHER,
-            # Add text variations that users might type
+            # Button responses
             "app": ServiceType.MOBILE_APP_DEV,
-            "application": ServiceType.MOBILE_APP_DEV,
             "domain": ServiceType.DOMAIN_HOSTING,
-            "hosting": ServiceType.DOMAIN_HOSTING,
-            "web": ServiceType.DOMAIN_HOSTING
+            "other": ServiceType.OTHER,
+            
+            # Text inputs
+            "1": ServiceType.MOBILE_APP_DEV,
+            "2": ServiceType.DOMAIN_HOSTING,
+            "3": ServiceType.OTHER,
+            "mobile": ServiceType.MOBILE_APP_DEV,
+            "website": ServiceType.WEBSITE_DEV,
+            "chatbot": ServiceType.CHATBOTS,
+            
+            # Add other variations as needed
         }
         
-        # Clean the prompt by removing emojis if present
-        clean_prompt = prompt.lower()
-        emoji_clean = {
-            "📱": "app",
-            "🌐": "domain",
-            "✨": "other"
-        }
-        for emoji, text in emoji_clean.items():
-            clean_prompt = clean_prompt.replace(emoji, text)
-        clean_prompt = clean_prompt.strip()
-        
-        service_type = service_map.get(clean_prompt)
+        service_type = service_map.get(prompt.lower())
         if not service_type:
-            # Resend buttons if invalid selection
-            welcome_msg = (
-                "🌟 Welcome to Contessasoft Services! 🌟\n\n"
-                "We offer a wide range of digital solutions. Please select a service type:\n\n"
-                "1. App Development\n"
-                "2. Domain Registration & Web Hosting\n"
-                "3. Other Services"       
-            )
-            send_button_message(
-                welcome_msg,
-                ["App Development", "Domain Hosting", "Other"],
-                user_data['sender'],
-                phone_id
-            )
-            return {'step': 'select_service_type'}
+            # If invalid input, resend current options without resetting to welcome
+            current_step = user_data.get('step', 'select_service_type')
+            return get_action(current_step, prompt, user_data, phone_id)
         
         user = User(user_data.get('name', 'User'), user_data['sender'])
         user.service_type = service_type
         
-        if service_type == ServiceType.MOBILE_APP_DEV:
-            # App Development path
-            app_types = [app_type.value for app_type in MobileAppType]
-            send_button_message(
-                "What type of mobile app do you need?",
-                app_types,
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {
-                'step': 'select_app_type',
-                'user': user.to_dict()
-            })
-            return {
-                'step': 'select_app_type',
-                'user': user.to_dict()
-            }
-            
-        elif service_type == ServiceType.DOMAIN_HOSTING:
-            # Domain Hosting path
-            send_message("Please enter the domain name you're interested in (e.g., mybusiness.com):", 
-                        user_data['sender'], phone_id)
-            update_user_state(user_data['sender'], {
-                'step': 'get_domain_query',
-                'user': user.to_dict()
-            })
-            return {
-                'step': 'get_domain_query',
-                'user': user.to_dict()
-            }
-            
-        else:
-            # Other Services path
-            send_message("Please describe your requirements:", user_data['sender'], phone_id)
-            update_user_state(user_data['sender'], {
-                'step': 'get_other_request',
-                'user': user.to_dict()
-            })
-            return {
-                'step': 'get_other_request',
-                'user': user.to_dict()
-            }
-            
+        # Rest of your existing service type handling logic...
+        # [Keep all your existing if/elif branches here]
+        
     except Exception as e:
         logging.error(f"Error in handle_select_service_type: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
+        return {'step': 'select_service_type'}  # Don't reset to welcome on error
 
 
 def handle_select_chatbot_service(prompt, user_data, phone_id):
@@ -1181,44 +1120,41 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    # Clean the prompt by removing emojis and normalizing
+    # Clean and normalize the prompt
     clean_prompt = prompt.lower().strip()
     clean_prompt = clean_prompt.replace("📱", "").replace("🌐", "").replace("✨", "").replace("🤖", "").strip()
     
-    # Handle special commands
-    if clean_prompt in ["hi", "hello", "hey", "start"]:
+    # Handle session reset commands
+    if clean_prompt in ["hi", "hello", "hey", "start", "menu"]:
         user_state = {'step': 'welcome', 'sender': sender}
-        updated_state = get_action('welcome', "", user_state, phone_id)
-        update_user_state(sender, updated_state)
-        return
+        update_user_state(sender, user_state)
+        return get_action('welcome', "", user_state, phone_id)
     
     # Get current user state
     user_state = get_user_state(sender)
-    user_state['sender'] = sender
+    user_state['sender'] = sender  # Ensure sender is always set
     
-    # Handle button responses by mapping to expected values
+    # Map button responses to consistent values
     button_mappings = {
-        "app development": "1",
-        "domain hosting": "2",
-        "other": "3",
-        "register": "1",
-        "transfer to agent": "2",
-        "check another": "3",
+        "app development": "app",
+        "domain hosting": "domain",
+        "other services": "other",
+        "register": "register",
+        "transfer to agent": "transfer",
+        "check another": "check",
         # Add other button mappings as needed
     }
     
     # Check if prompt matches any button text
-    normalized_prompt = clean_prompt.replace(" ", "_")
+    processed_prompt = clean_prompt
     for button_text, mapped_value in button_mappings.items():
-        if button_text in clean_prompt or normalized_prompt in button_text:
-            prompt = mapped_value
+        if button_text in clean_prompt:
+            processed_prompt = mapped_value
             break
     
     # Get current step and process action
-    step = user_state.get('step') or 'welcome'
-    updated_state = get_action(step, prompt, user_state, phone_id)
-    update_user_state(sender, updated_state)
-    
+    step = user_state.get('step', 'welcome')
+    return get_action(step, processed_prompt, user_state, phone_id)
 
 
 @app.route("/", methods=["GET"])
