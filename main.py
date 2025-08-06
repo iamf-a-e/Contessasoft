@@ -781,6 +781,16 @@ def webhook():
             return challenge, 200
         return "Failed", 403
 
+    @app.route("/webhook", methods=["GET", "POST"])
+def webhook():
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == "BOT":
+            return challenge, 200
+        return "Failed", 403
+
     elif request.method == "POST":
         data = request.get_json()
         logging.info(f"Incoming webhook data: {data}")
@@ -795,23 +805,35 @@ def webhook():
             if messages:
                 message = messages[0]
                 sender = message["from"]
+                user_state = get_user_state(sender)  # Get current user state
 
-                if "text" in message:
-                    prompt = message["text"]["body"].strip()
-                    message_handler(prompt, sender, phone_id)
-                elif "button" in message:
-                    button_response = message["button"]["text"]
-                    message_handler(button_response, sender, phone_id)
-                elif "interactive" in message and message["interactive"]["type"] == "list_reply":
-                    list_response = message["interactive"]["list_reply"]["title"]
-                    message_handler(list_response, sender, phone_id)
-                else:
-                    return handle_welcome("", {'sender': sender}, phone_id)
+                try:
+                    if "text" in message:
+                        prompt = message["text"]["body"].strip()
+                        message_handler(prompt, sender, phone_id)
+                    elif "button" in message:
+                        button_response = message["button"]["text"]
+                        message_handler(button_response, sender, phone_id)
+                    elif "interactive" in message and message["interactive"]["type"] == "list_reply":
+                        list_response = message["interactive"]["list_reply"]["title"]
+                        message_handler(list_response, sender, phone_id)
+                    else:
+                        # For unsupported message types, restart conversation
+                        handle_welcome("", {'sender': sender}, phone_id)
+                except Exception as handler_error:
+                    logging.error(f"Error in message handler: {handler_error}", exc_info=True)
+                    send_message("An error occurred. Restarting conversation...", sender, phone_id)
+                    handle_welcome("", {'sender': sender}, phone_id)
 
+        except KeyError as e:
+            logging.error(f"Missing key in webhook data: {e}")
+            return jsonify({"status": "error", "message": "Invalid webhook format"}), 400
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
+            return jsonify({"status": "error", "message": "Internal server error"}), 500
 
         return jsonify({"status": "ok"}), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
