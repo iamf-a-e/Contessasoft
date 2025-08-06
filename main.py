@@ -262,41 +262,88 @@ def handle_welcome(prompt, user_data, phone_id):
 
 def handle_select_service_type(prompt, user_data, phone_id):
     try:
-        # Map all possible inputs to service types
         service_map = {
-            # Button responses
-            "app": ServiceType.MOBILE_APP_DEV,
-            "domain": ServiceType.DOMAIN_HOSTING,
-            "other": ServiceType.OTHER,
-            
-            # Text inputs
-            "1": ServiceType.MOBILE_APP_DEV,
+            "1": ServiceType.CHATBOTS,
             "2": ServiceType.DOMAIN_HOSTING,
-            "3": ServiceType.OTHER,
-            "mobile": ServiceType.MOBILE_APP_DEV,
+            "3": ServiceType.WEBSITE_DEV,
+            "4": ServiceType.MOBILE_APP_DEV,
+            "5": ServiceType.OTHER,
+            "chatbots": ServiceType.CHATBOTS,
+            "domain": ServiceType.DOMAIN_HOSTING,
             "website": ServiceType.WEBSITE_DEV,
-            "chatbot": ServiceType.CHATBOTS,
-            
-            # Add other variations as needed
+            "mobile": ServiceType.MOBILE_APP_DEV,
+            "other": ServiceType.OTHER
         }
         
         service_type = service_map.get(prompt.lower())
         if not service_type:
-            # If invalid input, resend current options without resetting to welcome
-            current_step = user_data.get('step', 'select_service_type')
-            return get_action(current_step, prompt, user_data, phone_id)
+            send_message("Invalid selection. Please choose 1-5 or type the service name.", user_data['sender'], phone_id)
+            return {'step': 'select_service_type'}
         
         user = User(user_data.get('name', 'User'), user_data['sender'])
         user.service_type = service_type
         
-        # Rest of your existing service type handling logic...
-        # [Keep all your existing if/elif branches here]
-        
+        if service_type == ServiceType.CHATBOTS:
+            chatbot_options = [service.value for service in ChatbotService]
+            send_list_message(
+                "Select a chatbot service:",
+                chatbot_options,
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {
+                'step': 'select_chatbot_service',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'select_chatbot_service',
+                'user': user.to_dict()
+            }
+            
+        elif service_type == ServiceType.MOBILE_APP_DEV:
+            app_types = [app_type.value for app_type in MobileAppType]
+            send_button_message(
+                "What type of mobile app do you need?",
+                app_types,
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {
+                'step': 'select_app_type',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'select_app_type',
+                'user': user.to_dict()
+            }
+            
+        elif service_type == ServiceType.DOMAIN_HOSTING:
+            send_message("Please enter the domain name you're interested in (e.g., mybusiness.com):", 
+                        user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {
+                'step': 'get_domain_query',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'get_domain_query',
+                'user': user.to_dict()
+            }
+            
+        else:
+            send_message("Please describe your requirements:", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {
+                'step': 'get_other_request',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'get_other_request',
+                'user': user.to_dict()
+            }
+            
     except Exception as e:
         logging.error(f"Error in handle_select_service_type: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'select_service_type'}  # Don't reset to welcome on error
-
+        return {'step': 'welcome'}
 
 def handle_select_chatbot_service(prompt, user_data, phone_id):
     try:
@@ -1120,41 +1167,21 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    # Clean and normalize the prompt
-    clean_prompt = prompt.lower().strip()
-    clean_prompt = clean_prompt.replace("📱", "").replace("🌐", "").replace("✨", "").replace("🤖", "").strip()
-    
-    # Handle session reset commands
-    if clean_prompt in ["hi", "hello", "hey", "start", "menu"]:
+    text = prompt.strip().lower()
+
+    if text in ["hi", "hello", "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
-        update_user_state(sender, user_state)
-        return get_action('welcome', "", user_state, phone_id)
-    
-    # Get current user state
+        updated_state = get_action('welcome', "", user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
+
     user_state = get_user_state(sender)
-    user_state['sender'] = sender  # Ensure sender is always set
-    
-    # Map button responses to consistent values
-    button_mappings = {
-        "app development": "app",
-        "domain hosting": "domain",
-        "other services": "other",
-        "register": "register",
-        "transfer to agent": "transfer",
-        "check another": "check",
-        # Add other button mappings as needed
-    }
-    
-    # Check if prompt matches any button text
-    processed_prompt = clean_prompt
-    for button_text, mapped_value in button_mappings.items():
-        if button_text in clean_prompt:
-            processed_prompt = mapped_value
-            break
-    
-    # Get current step and process action
-    step = user_state.get('step', 'welcome')
-    return get_action(step, processed_prompt, user_state, phone_id)
+    user_state['sender'] = sender
+
+    step = user_state.get('step') or 'welcome'
+    updated_state = get_action(step, prompt, user_state, phone_id)
+    update_user_state(sender, updated_state)
+
 
 
 @app.route("/", methods=["GET"])
@@ -1163,101 +1190,44 @@ def index():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-    # Start timer for performance monitoring
-    start_time = time.time()
-    
     if request.method == "GET":
-        try:
-            mode = request.args.get("hub.mode")
-            token = request.args.get("hub.verify_token")
-            challenge = request.args.get("hub.challenge")
-            
-            if not all([mode, token, challenge]):
-                logging.warning("Missing GET parameters")
-                return "Invalid request", 400
-                
-            if mode == "subscribe" and token == "BOT":
-                logging.info("Webhook verified successfully")
-                return challenge, 200
-                
-            logging.warning("Webhook verification failed")
-            return "Failed", 403
-            
-        except Exception as e:
-            logging.error(f"GET verification error: {str(e)}", exc_info=True)
-            return "Server error", 500
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == "BOT":
+            return challenge, 200
+        return "Failed", 403
 
     elif request.method == "POST":
+        data = request.get_json()
+        logging.info(f"Incoming webhook data: {data}")
+
         try:
-            # Validate JSON data
-            if not request.is_json:
-                logging.warning("Received non-JSON POST data")
-                return jsonify({"status": "error", "message": "Invalid content type"}), 400
-
-            data = request.get_json()
-            logging.debug(f"Raw webhook data: {data}")
-
-            # Validate webhook structure
-            if not all(key in data for key in ["entry"]):
-                logging.warning("Invalid webhook structure")
-                return jsonify({"status": "error", "message": "Invalid webhook format"}), 400
-
             entry = data["entry"][0]
             changes = entry["changes"][0]
             value = changes["value"]
-            
-            # Extract metadata with error checking
-            metadata = value.get("metadata", {})
-            phone_id = metadata.get("phone_number_id")
-            if not phone_id:
-                logging.error("Missing phone_number_id in metadata")
-                return jsonify({"status": "error", "message": "Missing phone number ID"}), 400
+            phone_id = value["metadata"]["phone_number_id"]
 
-            # Process messages
             messages = value.get("messages", [])
-            if not messages:
-                logging.info("No messages to process")
-                return jsonify({"status": "ok"}), 200
+            if messages:
+                message = messages[0]
+                sender = message["from"]
 
-            message = messages[0]
-            sender = message.get("from")
-            if not sender:
-                logging.error("Missing sender in message")
-                return jsonify({"status": "error", "message": "Missing sender"}), 400
-
-            # Handle different message types
-            response = None
-            if message.get("type") == "interactive":
-                interactive = message.get("interactive", {})
-                if interactive.get("type") == "button_reply":
-                    response = interactive["button_reply"]["title"]
-                elif interactive.get("type") == "list_reply":
-                    response = interactive["list_reply"]["title"]
-            elif "text" in message:
-                response = message["text"]["body"].strip()
-
-            if response:
-                logging.info(f"Processing message from {sender}: {response}")
-                message_handler(response, sender, phone_id)
-            else:
-                logging.warning("Unsupported message type")
-                send_message("Please send a text message or select an option", sender, phone_id)
-
-            logging.info(f"Request processed in {time.time() - start_time:.2f}s")
-            return jsonify({"status": "ok"}), 200
-
-        except KeyError as e:
-            logging.error(f"Missing key in webhook data: {str(e)}", exc_info=True)
-            return jsonify({"status": "error", "message": f"Missing data: {str(e)}"}), 400
-            
+                if "text" in message:
+                    prompt = message["text"]["body"].strip()
+                    message_handler(prompt, sender, phone_id)
+                elif "button" in message:
+                    button_response = message["button"]["text"]
+                    message_handler(button_response, sender, phone_id)
+                elif "interactive" in message and message["interactive"]["type"] == "list_reply":
+                    list_response = message["interactive"]["list_reply"]["title"]
+                    message_handler(list_response, sender, phone_id)
+                else:
+                    send_message("Please send a text message or select an option", sender, phone_id)
         except Exception as e:
-            logging.error(f"Unexpected error processing webhook: {str(e)}", exc_info=True)
-            if 'sender' in locals() and 'phone_id' in locals():
-                send_message("We encountered an error. Please try again.", sender, phone_id)
-            return jsonify({"status": "error", "message": str(e)}), 500
+            logging.error(f"Error processing webhook: {e}", exc_info=True)
 
-    return jsonify({"status": "error", "message": "Method not allowed"}), 405
-
+        return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
