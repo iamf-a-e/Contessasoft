@@ -1085,7 +1085,7 @@ def handle_ask_another_service(prompt, user_data, phone_id):
         update_user_state(user_data['sender'], {'step': 'welcome'})
         return {'step': 'welcome'}
 
-def send_message_to_agent(user):
+def send_message_to_agent(user, phone_id):
     try:
         # Format the message to send to agent
         message = f"New client request from {user.name} ({user.phone}):\n\n"
