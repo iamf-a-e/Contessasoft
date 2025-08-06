@@ -218,6 +218,7 @@ def send_list_message(text, options, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send list message: {e}")
+        
 
 # Handlers
 def handle_welcome(prompt, user_data, phone_id):
