@@ -24,6 +24,15 @@ redis_url = os.environ.get("REDIS_URL")
 # Redis client setup
 redis_client = redis.StrictRedis.from_url(redis_url, decode_responses=True)
 
+# After redis_client setup
+try:
+    redis_client.ping()
+    logging.info("✅ Successfully connected to Redis")
+except redis.ConnectionError:
+    logging.error("❌ Could not connect to Redis")
+    raise
+    
+
 class ServiceType(Enum):
     CHATBOTS = "🤖 Chatbots"
     DOMAIN_HOSTING = "🌐 Domain & Hosting"
