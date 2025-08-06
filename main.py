@@ -492,47 +492,90 @@ def handle_chatbot_menu(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 def handle_get_quote_info(prompt, user_data, phone_id):
-    try:       
-        user = User.from_dict(user_data['user'])
-        user.project_description = prompt
+    try:
+        if 'name' not in user_data:
+            user = User(prompt, user_data['sender'])
+            send_message("Thank you. Please provide your email or WhatsApp number:", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email'
+            })
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email'
+            }
             
-        # Simple confirmation message to user
-        send_message("Thank you, our team has been notified and will contact you soon.", 
-                    user_data['sender'], phone_id)
+        elif user_data.get('field') == 'email':
+            user = User.from_dict(user_data['user'])
+            user.email = prompt
+            send_message("Please specify the type of service you need:", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'service_type'
+            })
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'service_type'
+            }
             
-        # Detailed message to admin/agent
-        admin_msg = (
-            "📋 *New Quote Request*\n\n"
-            f"👤 Name: {user.name}\n"
-            f"📞 Phone: {user.phone}\n"
-            f"📧 Email: {user.email}\n"
-            f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
-            f"📝 Description: {user.project_description}"
-        )
-        send_message(admin_msg, owner_phone, phone_id)
+        elif user_data.get('field') == 'service_type':
+            user = User.from_dict(user_data['user'])
+            try:
+                user.service_type = ServiceOptions(prompt)
+            except ValueError:
+                user.service_type = ServiceOptions.OTHER
+            send_message("Please provide a short description of your project:", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description'
+            })
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description'
+            }
             
-        # Ask if user wants another service
-        send_button_message(
-            "Would you like to request another service?",
-            ["✅ Yes", "❌ No"],
-            user_data['sender'],
-            phone_id
-        )
+        elif user_data.get('field') == 'description':
+            user = User.from_dict(user_data['user'])
+            user.project_description = prompt
             
-        update_user_state(user_data['sender'], {
-            'step': 'ask_another_service',
-            'user': user.to_dict()
-        })
-        return {
-            'step': 'ask_another_service',
-            'user': user.to_dict()
-        }
+            quote_options = [option.value for option in QuoteOptions]
+            send_list_message(
+                "Would you like a call back after submitting?",
+                quote_options,
+                user_data['sender'],
+                phone_id
+            )
+            
+            # Send info to admin
+            admin_msg = (
+                "📋 *New Quote Request*\n\n"
+                f"👤 Name: {user.name}\n"
+                f"📞 Phone: {user.phone}\n"
+                f"📧 Email: {user.email}\n"
+                f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
+                f"📝 Description: {user.project_description}"
+            )
+            send_message(admin_msg, owner_phone, phone_id)
+            
+            update_user_state(user_data['sender'], {
+                'step': 'quote_followup',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'quote_followup',
+                'user': user.to_dict()
+            }
             
     except Exception as e:
         logging.error(f"Error in handle_get_quote_info: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-
 
 def handle_quote_followup(prompt, user_data, phone_id):
     try:
@@ -773,7 +816,7 @@ def get_action(current_state, prompt, user_data, phone_id):
 def message_handler(prompt, sender, phone_id):
     text = prompt.strip().lower()
 
-    if text in ["hi", "hello", "hey", "start"]:
+    if text in ["hi", "hello", "hie",  "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
