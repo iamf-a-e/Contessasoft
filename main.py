@@ -23,23 +23,22 @@ owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
 
 # Redis client setup
-#redis_client = redis.StrictRedis.from_url(redis_url, decode_responses=True)
+redis_client = Redis(
+    url=os.environ.get('UPSTASH_REDIS_URL'),
+    token=os.environ.get('UPSTASH_REDIS_TOKEN')
+)
 
-redis_client = Redis(url="https://charming-badger-9935.upstash.io", token="ASbPAAIjcDE1NDVlZTRiZGI5ZTE0NDFlOTU0ODY1NWJjOTVlZmFmNHAxMA")
-
-redis.set("foo", "bar")
-value = redis.get("foo")
-
-logging.basicConfig(level=logging.INFO)
-
-# After redis_client setup
+# Test connection
 try:
-    redis_client.ping()
-    logging.info("✅ Successfully connected to Redis")
-except redis.ConnectionError:
-    logging.error("❌ Could not connect to Redis")
+    redis_client.set("foo", "bar")
+    print("✅ Upstash Redis connection successful")
+except Exception as e:
+    print(f"❌ Upstash Redis error: {e}")
     raise
     
+
+logging.basicConfig(level=logging.INFO)
+  
 
 class ServiceType(Enum):
     CHATBOTS = "🤖 Chatbots"
