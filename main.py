@@ -715,9 +715,7 @@ def handle_contact_menu(prompt, user_data, phone_id):
             
         if selected_option == ContactOptions.CALLBACK:
             send_message(
-                "Please provide:\n"
-                "1. Your name\n"
-                "2. Best time to call (e.g., 2-4pm weekdays)",
+                "Please provide your full name.\n",
                 user_data['sender'],
                 phone_id
             )
@@ -736,7 +734,7 @@ def handle_contact_menu(prompt, user_data, phone_id):
             admin_msg = f"👤 {user_data['sender']} requested to speak with an agent."
             send_message(admin_msg, owner_phone, phone_id)
             
-            return handle_welcome("", user_data, phone_id)
+            return human_agent("", user_data, phone_id)
             
         elif selected_option == ContactOptions.BACK:
             return handle_welcome("", user_data, phone_id)
