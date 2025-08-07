@@ -294,12 +294,8 @@ def handle_main_menu(prompt, user_data, phone_id):
             
         elif selected_option == MainMenuOptions.QUOTE:
             send_message(
-                "To help us prepare a quote, please provide the following:\n"
-                "1. Your full name\n"
-                "2. Email or WhatsApp number\n"
-                "3. Type of service you need\n"
-                "4. Short description of your project\n\n"
-                "Once submitted, we will respond within 24 hours.",
+                "To help us prepare a quote, please provide your full name.\n\n"             
+                "Once we've collected your details, we will respond within 24 hours.",
                 user_data['sender'],
                 phone_id
             )
@@ -462,11 +458,7 @@ def handle_chatbot_menu(prompt, user_data, phone_id):
             
         if selected_option == ChatbotOptions.QUOTE:
             send_message(
-                "To help us prepare a quote, please provide the following:\n"
-                "1. Your full name\n"
-                "2. Email or WhatsApp number\n"
-                "3. Specific chatbot features needed\n"
-                "4. Expected number of users",
+                "To help us prepare a quote, please provide your full name.",
                 user_data['sender'],
                 phone_id
             )
