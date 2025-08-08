@@ -481,9 +481,79 @@ def handle_services_menu(prompt, user_data, phone_id):
         else:
             # Send service details with quote option
             service_info = {
-                ServiceOptions.DOMAIN: "🌐 Domain & Hosting services...",
-                ServiceOptions.WEBSITE: "🖥️ Website Development services...",
-                # ... other service descriptions
+                ServiceOptions.DOMAIN: (
+                "🌐 *Domain & Hosting Services*\n\n"
+                "• Domain registration (.co.zw, .com, etc.)\n"
+                "• Reliable web hosting with 99.9% uptime\n"
+                "• Professional email hosting\n"
+                "• SSL certificates for security\n"
+                "• DNS management\n"
+                "• Website migration assistance"
+            ),
+            ServiceOptions.WEBSITE: (
+                "🖥️ *Website Development*\n\n"
+                "• Custom business websites\n"
+                "• E-commerce stores with payment integration\n"
+                "• Content Management Systems (CMS)\n"
+                "• Web application development\n"
+                "• SEO optimization\n"
+                "• Ongoing maintenance packages"
+            ),
+            ServiceOptions.MOBILE: (
+                "📱 *Mobile App Development*\n\n"
+                "• Native iOS and Android apps\n"
+                "• Cross-platform hybrid apps\n"
+                "• App UI/UX design\n"
+                "• API integration\n"
+                "• App Store and Play Store deployment\n"
+                "• Post-launch support"
+            ),
+            ServiceOptions.CHATBOT: (
+                "🤖 *WhatsApp Chatbots*\n\n"
+                "• Automated customer service\n"
+                "• Bill payment solutions (ZESA, DStv, etc.)\n"
+                "• Order processing systems\n"
+                "• KYC and registration flows\n"
+                "• FAQ and support automation\n"
+                "• Integration with business systems"
+            ),
+            ServiceOptions.PAYMENTS: (
+                "💳 *Payment Integrations*\n\n"
+                "• Ecocash/OneMoney/ZimSwitch\n"
+                "• VISA/Mastercard gateways\n"
+                "• PayPal and international payments\n"
+                "• Custom payment solutions\n"
+                "• PCI-DSS compliant setups\n"
+                "• Reconciliation reporting"
+            ),
+            ServiceOptions.AI: (
+                "🧠 *AI & Automation*\n\n"
+                "• Intelligent chatbots\n"
+                "• Document processing and OCR\n"
+                "• Predictive analytics\n"
+                "• Process automation\n"
+                "• Machine learning models\n"
+                "• Data extraction and analysis"
+            ),
+            ServiceOptions.DASHBOARDS: (
+                "📊 *Business Dashboards*\n\n"
+                "• Real-time business analytics\n"
+                "• Custom reporting tools\n"
+                "• Data visualization\n"
+                "• KPI tracking\n"
+                "• Executive dashboards\n"
+                "• Automated report generation"
+            ),
+            ServiceOptions.OTHER: (
+                "✨ *Custom Solutions*\n\n"
+                "We develop tailored software for:\n"
+                "• Inventory management\n"
+                "• School administration\n"
+                "• Healthcare systems\n"
+                "• Logistics tracking\n"
+                "• Financial services\n"
+                "• And other business needs"
+            )
             }.get(selected_option, "ℹ️ Service information")
             
             try:
