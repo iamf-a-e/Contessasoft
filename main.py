@@ -267,7 +267,8 @@ def handle_main_menu(prompt, user_data, phone_id):
         if selected_option == MainMenuOptions.ABOUT:
             about_msg = (
                 "Contessasoft is a Zimbabwe-based software company established in 2022.\n"
-                "We develop custom systems for businesses in finance, education, logistics, retail, and other sectors."
+                "We develop custom systems for businesses in finance, education, logistics, retail, and other sectors.\n\n"
+                "Would you like to:"
             )
             
             about_options = [option.value for option in AboutOptions]
@@ -319,7 +320,8 @@ def handle_main_menu(prompt, user_data, phone_id):
                 "You can reach Contessasoft through the following:\n\n"
                 "Address: 115 ED Mnangagwa Road, Highlands, Harare, Zimbabwe\n"
                 "WhatsApp: +263 242 498954\n"
-                "Email: sales@contessasoft.co.zw"
+                "Email: sales@contessasoft.co.zw\n\n"
+                "Would you like to:"
             )
             
             contact_options = [option.value for option in ContactOptions]
