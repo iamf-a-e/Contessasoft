@@ -819,32 +819,48 @@ def webhook():
         logging.info(f"Incoming webhook data: {data}")
 
         try:
-            entry = data["entry"][0]
-            changes = entry["changes"][0]
-            value = changes["value"]
-            phone_id = value["metadata"]["phone_number_id"]
+            if not data or "entry" not in data:
+                logging.warning("Empty or invalid webhook data")
+                return jsonify({"status": "ok"}), 200
 
-            messages = value.get("messages", [])
-            if messages:
-                message = messages[0]
-                sender = message["from"]
+            for entry in data.get("entry", []):
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+                    metadata = value.get("metadata", {})
+                    phone_id = metadata.get("phone_number_id")
 
-                if "text" in message:
-                    prompt = message["text"]["body"].strip()
-                    message_handler(prompt, sender, phone_id)
-                elif "button" in message:
-                    button_response = message["button"]["text"]
-                    message_handler(button_response, sender, phone_id)
-                elif "interactive" in message and message["interactive"]["type"] == "list_reply":
-                    list_response = message["interactive"]["list_reply"]["title"]
-                    message_handler(list_response, sender, phone_id)
-                else:
-                    return handle_welcome("", {'sender': sender}, phone_id)
+                    if not phone_id:
+                        continue
+
+                    messages = value.get("messages", [])
+                    contacts = value.get("contacts", [])
+
+                    if not messages or not contacts:
+                        continue
+
+                    message = messages[0]
+                    contact = contacts[0]
+                    sender = message.get("from")
+
+                    if "text" in message:
+                        prompt = message["text"].get("body", "").strip()
+                        if prompt:
+                            message_handler(prompt, sender, phone_id)
+                    elif "button" in message:
+                        button_response = message["button"].get("text")
+                        if button_response:
+                            message_handler(button_response, sender, phone_id)
+                    elif ("interactive" in message and 
+                          message["interactive"].get("type") == "list_reply"):
+                        list_response = message["interactive"]["list_reply"].get("title")
+                        if list_response:
+                            message_handler(list_response, sender, phone_id)
 
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
 
         return jsonify({"status": "ok"}), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
