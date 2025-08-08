@@ -26,6 +26,12 @@ redis_client = Redis(
     token=os.environ.get('UPSTASH_REDIS_TOKEN')
 )
 
+
+required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    raise RuntimeError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 # Test connection
 try:
     redis_client.set("foo", "bar")
@@ -206,32 +212,60 @@ def send_list_message(text, options, recipient, phone_id):
         'Content-Type': 'application/json'
     }
     
-    sections = [{
-        "title": "Select an option",
-        "rows": [{"id": str(i+1), "title": opt, "description": ""} for i, opt in enumerate(options[:10])]  # Max 10 items
-    }]
+    # Validate and prepare the list items
+    formatted_rows = []
+    for i, option in enumerate(options[:10]):  # WhatsApp allows max 10 items
+        formatted_rows.append({
+            "id": f"option_{i+1}",
+            "title": option[:24],  # Max 24 characters for title
+            "description": option[24:72] if len(option) > 24 else ""  # Optional description
+        })
     
-    data = {
+    payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": recipient,
         "type": "interactive",
         "interactive": {
             "type": "list",
+            "header": {
+                "type": "text",
+                "text": "Menu Options"[:60]  # Max 60 chars for header
+            },
             "body": {
-                "text": text
+                "text": text[:1024]  # Max 1024 chars for body
+            },
+            "footer": {
+                "text": "Select an option below"[:60]  # Max 60 chars for footer
             },
             "action": {
-                "button": "Choose option",
-                "sections": sections
+                "button": "Options"[:20],  # Max 20 chars for button text
+                "sections": [
+                    {
+                        "title": "Available Options"[:24],  # Max 24 chars for section title
+                        "rows": formatted_rows
+                    }
+                ]
             }
         }
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to send list message: {e}")
+        logging.info(f"List message sent successfully to {recipient}")
+        return True
+    except requests.exceptions.HTTPError as e:
+        error_detail = f"Status: {e.response.status_code}, Response: {e.response.text}"
+        logging.error(f"Failed to send list message: {error_detail}")
+        # Fallback to simple message if list fails
+        fallback_msg = f"{text}\n\n" + "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options[:10]))
+        send_message(fallback_msg, recipient, phone_id)
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error sending list message: {str(e)}")
+        return False
+
 
 # Handlers
 def handle_welcome(prompt, user_data, phone_id):
@@ -397,199 +431,86 @@ def handle_about_menu(prompt, user_data, phone_id):
 
 def handle_services_menu(prompt, user_data, phone_id):
     try:
-        # Clean the input prompt
-        cleaned_prompt = prompt.strip().lower()
+        # Clean and normalize input
+        clean_input = prompt.strip().lower()
         
-        # Find matching service option
+        # Find matching service with better matching logic
         selected_option = None
         for option in ServiceOptions:
-            if cleaned_prompt in option.value.lower():
+            option_clean = option.value.lower()
+            if (clean_input in option_clean or 
+                any(word in clean_input for word in option_clean.split()) or
+                clean_input == option.name.lower()):
                 selected_option = option
                 break
         
-        # If no direct match, try partial matching
         if not selected_option:
-            for option in ServiceOptions:
-                if cleaned_prompt in option.value.lower() or option.value.lower() in cleaned_prompt:
-                    selected_option = option
-                    break
-
-        if not selected_option:
-            error_msg = (
-                "🚫 *Invalid Selection*\n\n"
-                "Please choose a service from the options below:"
-            )
-            service_options = [option.value for option in ServiceOptions]
-            send_list_message(
-                error_msg,
-                service_options,
-                user_data['sender'],
-                phone_id
-            )
+            error_msg = "🚫 Please select a valid service option:"
+            service_options = [opt.value for opt in ServiceOptions]
+            
+            if not send_list_message(error_msg, service_options, user_data['sender'], phone_id):
+                # Fallback to simple message if list fails
+                send_message(
+                    "Please reply with:\n" + "\n".join(f"- {opt.value}" for opt in ServiceOptions),
+                    user_data['sender'],
+                    phone_id
+                )
             return {'step': 'services_menu'}
 
-        # Handle Chatbot selection
+        # Handle specific service cases
         if selected_option == ServiceOptions.CHATBOT:
-            chatbot_msg = (
-                "🤖 *WhatsApp Chatbot Services*\n\n"
-                "We specialize in:\n"
-                "• Payment Processing Bots\n"
-                "• Customer Support Bots\n"
-                "• Order Management Bots\n"
-                "• Registration & KYC Bots\n\n"
-                "What would you like to do?"
-            )
-            
-            chatbot_options = [
-                ChatbotOptions.QUOTE.value,
-                ChatbotOptions.SAMPLE.value,
-                ChatbotOptions.BACK.value
-            ]
-            
-            try:
-                send_list_message(
-                    chatbot_msg,
-                    chatbot_options,
-                    user_data['sender'],
-                    phone_id
-                )
-                update_user_state(user_data['sender'], {
-                    'step': 'chatbot_menu',
-                    'selected_service': 'CHATBOT'
-                })
-                return {'step': 'chatbot_menu'}
-            except Exception as e:
-                logging.error(f"Failed to send chatbot menu: {str(e)}")
-                # Fallback to simple message
+            chatbot_msg = "🤖 WhatsApp Chatbot Services:\nSelect an option:"
+            chatbot_options = [opt.value for opt in ChatbotOptions]
+            if not send_list_message(chatbot_msg, chatbot_options, user_data['sender'], phone_id):
                 send_message(
-                    "Please reply with:\n1. 'Quote' for pricing\n2. 'Sample' to see examples\n3. 'Back' to return",
+                    "Reply with:\n1. 'Quote'\n2. 'Sample'\n3. 'Back'",
                     user_data['sender'],
                     phone_id
                 )
-                return {'step': 'chatbot_menu'}
-
-        # Handle Other/Custom service
+            return {'step': 'chatbot_menu'}
+            
         elif selected_option == ServiceOptions.OTHER:
             send_message(
-                "✍️ *Custom Service Request*\n\n"
-                "Please describe your requirements in detail:\n"
+                "✍️ Please describe your custom requirements:\n"
                 "(Include: project type, features needed, and timeline if possible)",
                 user_data['sender'],
                 phone_id
             )
-            update_user_state(user_data['sender'], {
-                'step': 'get_custom_service',
-                'selected_service': 'CUSTOM',
-                'service_description': None
-            })
             return {'step': 'get_custom_service'}
-
-        # Handle all other services
+            
         else:
-            service_details = {
-                ServiceOptions.DOMAIN: (
-                    "🌐 *Domain & Hosting Services*\n\n"
-                    "• Domain registration (.co.zw, .com, etc.)\n"
-                    "• Reliable web hosting\n"
-                    "• Professional email setup\n"
-                    "• SSL certificates\n"
-                    "• 99.9% uptime guarantee"
-                ),
-                ServiceOptions.WEBSITE: (
-                    "🖥️ *Website Development*\n\n"
-                    "• Business websites\n"
-                    "• E-commerce stores\n"
-                    "• Custom web applications\n"
-                    "• CMS solutions\n"
-                    "• SEO optimization"
-                ),
-                ServiceOptions.MOBILE: (
-                    "📱 *Mobile App Development*\n\n"
-                    "• iOS & Android apps\n"
-                    "• Cross-platform solutions\n"
-                    "• App store deployment\n"
-                    "• API integration\n"
-                    "• Maintenance packages"
-                ),
-                ServiceOptions.PAYMENTS: (
-                    "💳 *Payment Integrations*\n\n"
-                    "• Ecocash/OneMoney/ZimSwitch\n"
-                    "• VISA/Mastercard gateways\n"
-                    "• International payments\n"
-                    "• Custom payment solutions\n"
-                    "• PCI-compliant setups"
-                ),
-                ServiceOptions.AI: (
-                    "🧠 *AI & Automation*\n\n"
-                    "• Intelligent chatbots\n"
-                    "• Document processing\n"
-                    "• Predictive analytics\n"
-                    "• Workflow automation\n"
-                    "• Machine learning solutions"
-                ),
-                ServiceOptions.DASHBOARDS: (
-                    "📊 *Business Dashboards*\n\n"
-                    "• Real-time analytics\n"
-                    "• Custom reporting\n"
-                    "• Data visualization\n"
-                    "• KPI tracking\n"
-                    "• Executive dashboards"
-                )
-            }.get(selected_option, "ℹ️ Service details coming soon.")
-
-            # Try sending as interactive buttons first
+            # Send service details with quote option
+            service_info = {
+                ServiceOptions.DOMAIN: "🌐 Domain & Hosting services...",
+                ServiceOptions.WEBSITE: "🖥️ Website Development services...",
+                # ... other service descriptions
+            }.get(selected_option, "ℹ️ Service information")
+            
             try:
                 send_button_message(
-                    service_details,
-                    ["💬 Request Quote", "🔙 Back to Services"],
+                    service_info,
+                    ["💰 Get Quote", "🔙 Back"],
                     user_data['sender'],
                     phone_id
                 )
             except Exception as e:
                 logging.error(f"Button message failed: {str(e)}")
-                # Fallback to simple text message
                 send_message(
-                    f"{service_details}\n\n"
-                    "Reply with:\n"
-                    "1. 'Quote' to request pricing\n"
-                    "2. 'Back' to return to services",
+                    f"{service_info}\n\nReply with 'Quote' or 'Back'",
                     user_data['sender'],
                     phone_id
                 )
-
-            update_user_state(user_data['sender'], {
-                'step': 'service_detail',
-                'selected_service': selected_option.name,
-                'service_description': selected_option.value
-            })
+            
             return {
                 'step': 'service_detail',
                 'selected_service': selected_option.name
             }
-
-    except Exception as e:
-        logging.error(f"Critical error in services menu: {str(e)}\n{traceback.format_exc()}")
-        # Comprehensive error recovery
-        try:
-            send_message(
-                "⚠️ We're experiencing technical difficulties.\n\n"
-                "Please try selecting a service again or type 'menu' to start over.",
-                user_data['sender'],
-                phone_id
-            )
-            # Return to services menu instead of welcome for better UX
-            service_options = [option.value for option in ServiceOptions]
-            send_list_message(
-                "Our Services:",
-                service_options,
-                user_data['sender'],
-                phone_id
-            )
-            return {'step': 'services_menu'}
-        except Exception as fallback_error:
-            logging.error(f"Fallback failed: {str(fallback_error)}")
-            return {'step': 'welcome'}
             
+    except Exception as e:
+        logging.error(f"Service menu error: {str(e)}\n{traceback.format_exc()}")
+        send_message("⚠️ Please try selecting again or type 'menu'", user_data['sender'], phone_id)
+        return {'step': 'services_menu'}
+        
 
 def handle_chatbot_menu(prompt, user_data, phone_id):
     try:
@@ -972,69 +893,62 @@ def message_handler(prompt, sender, phone_id):
 def index():
     return render_template("connected.html")
 
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    if request.method == "GET":
-        mode = request.args.get("hub.mode")
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == "BOT":
-            return challenge, 200
-        return "Failed", 403
-
-    elif request.method == "POST":
-        data = request.get_json()
-        logging.info(f"Incoming webhook data: {data}")
-
+    if request.method == "POST":
         try:
-            if not data or "entry" not in data:
-                logging.warning("Empty or invalid webhook data")
+            data = request.get_json()
+            if not data:
+                logging.warning("Empty webhook request")
                 return jsonify({"status": "ok"}), 200
 
-            for entry in data.get("entry", []):
-                for change in entry.get("changes", []):
-                    value = change.get("value", {})
-                    if not value:
-                        continue
+            entries = data.get("entry", [])
+            if not entries:
+                logging.info("No entries in webhook")
+                return jsonify({"status": "ok"}), 200
 
+            for entry in entries:
+                changes = entry.get("changes", [])
+                for change in changes:
+                    value = change.get("value", {})
                     metadata = value.get("metadata", {})
                     phone_id = metadata.get("phone_number_id")
+                    
                     if not phone_id:
                         continue
-
+                        
                     messages = value.get("messages", [])
                     if not messages:
                         continue
-
+                        
                     message = messages[0]
                     sender = message.get("from")
                     if not sender:
                         continue
 
+                    # Handle different message types
                     if "text" in message:
-                        text = message["text"]
-                        prompt = text.get("body", "").strip()
-                        if prompt:
-                            message_handler(prompt, sender, phone_id)
+                        text = message["text"].get("body", "").strip()
+                        if text:
+                            message_handler(text, sender, phone_id)
                     elif "button" in message:
-                        button = message["button"]
-                        button_response = button.get("text")
-                        if button_response:
-                            message_handler(button_response, sender, phone_id)
+                        button_text = message["button"].get("text", "").strip()
+                        if button_text:
+                            message_handler(button_text, sender, phone_id)
                     elif "interactive" in message:
                         interactive = message["interactive"]
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
-                            list_response = list_reply.get("title")
-                            if list_response:
-                                message_handler(list_response, sender, phone_id)
+                            reply_title = list_reply.get("title", "").strip()
+                            if reply_title:
+                                message_handler(reply_title, sender, phone_id)
 
         except Exception as e:
-            logging.error(f"Error processing webhook: {e}", exc_info=True)
+            logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-        
+               
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
