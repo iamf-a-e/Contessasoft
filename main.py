@@ -301,7 +301,7 @@ def handle_main_menu(prompt, user_data, phone_id):
                 phone_id
             )
             update_user_state(user_data['sender'], {'step': 'get_quote_info'})
-            return {'step': 'handle_get_quote_info'}
+            return {'step': 'get_quote_info'}
             
         elif selected_option == MainMenuOptions.SUPPORT:
             support_msg = "Please select the type of support you need:"
