@@ -475,10 +475,7 @@ def handle_main_menu(prompt, user_data, phone_id):
             return {'step': 'main_menu'}
         
         if selected_option == MainMenuOptions.ABOUT:
-            about_msg = (
-                "Contessasoft is a Zimbabwe-based software company established in 2022.\n"
-                "We develop custom systems for businesses in finance, education, logistics, retail, and other sectors."
-            )
+            about_msg = (Would you like to:)
             
             about_options = [option.value for option in AboutOptions]
             send_list_message(
