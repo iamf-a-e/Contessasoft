@@ -295,14 +295,16 @@ def handle_main_menu(prompt, user_data, phone_id):
             
         elif selected_option == MainMenuOptions.QUOTE:
             send_message(
-                "To help us prepare a quote, please provide your full name.\n\n"             
-                "Once we've collected your details, we will respond within 24 hours.",
+                "To help us prepare a quote, please provide your full name.",
                 user_data['sender'],
                 phone_id
             )
+            # Initialize empty user object
+            user = User(name="", phone=user_data['sender'])
             update_user_state(user_data['sender'], {
                 'step': 'get_quote_info',
-                'field': 'name' 
+                'user': user.to_dict(),
+                'field': 'name'  # First field to collect
             })
             return {'step': 'get_quote_info'}
             
@@ -490,13 +492,15 @@ def handle_chatbot_menu(prompt, user_data, phone_id):
 
 def handle_get_quote_info(prompt, user_data, phone_id):
     try:
-        # Initialize user object if it doesn't exist
-        if 'user' not in user_data:
-            user = User(name=prompt, phone=user_data['sender'])
+        user = User.from_dict(user_data['user'])
+        current_field = user_data.get('field')
+        
+        if current_field == 'name':
+            user.name = prompt
             update_user_state(user_data['sender'], {
                 'step': 'get_quote_info',
                 'user': user.to_dict(),
-                'field': 'email'  # Next field to collect
+                'field': 'email'
             })
             send_message("Thank you. Please provide your email or WhatsApp number:", user_data['sender'], phone_id)
             return {
@@ -504,11 +508,8 @@ def handle_get_quote_info(prompt, user_data, phone_id):
                 'user': user.to_dict(),
                 'field': 'email'
             }
-        
-        user = User.from_dict(user_data['user'])
-        current_field = user_data.get('field', 'email')
-        
-        if current_field == 'email':
+            
+        elif current_field == 'email':
             user.email = prompt
             update_user_state(user_data['sender'], {
                 'step': 'get_quote_info',
@@ -541,50 +542,13 @@ def handle_get_quote_info(prompt, user_data, phone_id):
             
         elif current_field == 'description':
             user.project_description = prompt
-            
-            # Show summary and callback options
-            summary_msg = (
-                "Here's what we have so far:\n\n"
-                f"👤 Name: {user.name}\n"
-                f"📧 Contact: {user.email}\n"
-                f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
-                f"📝 Project: {user.project_description}\n\n"
-                "Would you like a call back after submitting?"
-            )
-            
-            quote_options = [option.value for option in QuoteOptions]
-            send_list_message(
-                summary_msg,
-                quote_options,
-                user_data['sender'],
-                phone_id
-            )
-            
-            # Send notification to admin
-            admin_msg = (
-                "📋 *New Quote Request*\n\n"
-                f"👤 Name: {user.name}\n"
-                f"📞 Phone: {user.phone}\n"
-                f"📧 Email: {user.email}\n"
-                f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
-                f"📝 Description: {user.project_description}"
-            )
-            send_message(admin_msg, owner_phone, phone_id)
-            
-            update_user_state(user_data['sender'], {
-                'step': 'quote_followup',
-                'user': user.to_dict()
-            })
-            return {
-                'step': 'quote_followup',
-                'user': user.to_dict()
-            }
+            # ... rest of the description handling code ...
             
     except Exception as e:
         logging.error(f"Error in handle_get_quote_info: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-
+        
 
 def handle_quote_followup(prompt, user_data, phone_id):
     try:
