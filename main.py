@@ -20,6 +20,9 @@ gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
 
+# Agent numbers - these should be added to your environment variables
+agent_numbers = os.environ.get("AGENT_NUMBERS", "").split(",")  # Format: "263123456789,263987654321"
+
 # Redis client setup
 redis_client = Redis(
     url=os.environ.get('UPSTASH_REDIS_URL'),
@@ -79,6 +82,11 @@ class ContactOptions(Enum):
     AGENT = "Speak to an agent"
     BACK = "Back to main menu"
 
+class AgentOptions(Enum):
+    ACCEPT = "Accept conversation"
+    DECLINE = "Decline conversation"
+    END = "End conversation and return to bot"
+
 class User:
     def __init__(self, name, phone):
         self.name = name
@@ -126,6 +134,37 @@ def update_user_state(phone_number, updates):
     if 'sender' not in current:
         current['sender'] = phone_number
     redis_client.setex(f"user_state:{phone_number}", 86400, json.dumps(current))
+
+def get_conversation_history(phone_number):
+    history_json = redis_client.get(f"conversation:{phone_number}")
+    if history_json:
+        return json.loads(history_json)
+    return []
+
+def add_to_conversation_history(phone_number, message, sender_type="user"):
+    history = get_conversation_history(phone_number)
+    timestamp = datetime.now().isoformat()
+    history.append({
+        "timestamp": timestamp,
+        "sender": sender_type,
+        "message": message
+    })
+    # Keep only the last 10 messages
+    if len(history) > 10:
+        history = history[-10:]
+    redis_client.setex(f"conversation:{phone_number}", 86400, json.dumps(history))
+
+def get_active_agent(customer_number):
+    agent_json = redis_client.get(f"active_agent:{customer_number}")
+    if agent_json:
+        return json.loads(agent_json)
+    return None
+
+def set_active_agent(customer_number, agent_number):
+    redis_client.setex(f"active_agent:{customer_number}", 3600, json.dumps(agent_number))
+
+def clear_active_agent(customer_number):
+    redis_client.delete(f"active_agent:{customer_number}")
 
 def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -232,6 +271,177 @@ def send_list_message(text, options, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send list message: {e}")
+
+# Human agent functions
+def assign_agent(customer_number, customer_name=None):
+    if not agent_numbers:
+        return None
+    
+    # Try to find an available agent
+    for agent in agent_numbers:
+        agent = agent.strip()
+        if not agent:
+            continue
+            
+        # Check if agent is already assigned to someone
+        agent_assigned = redis_client.get(f"agent_assigned:{agent}")
+        if not agent_assigned:
+            # Assign this agent
+            redis_client.setex(f"agent_assigned:{agent}", 3600, customer_number)
+            set_active_agent(customer_number, agent)
+            
+            # Notify agent
+            customer_info = f"{customer_name} ({customer_number})" if customer_name else customer_number
+            agent_msg = (
+                f"🔔 *New Customer Request*\n\n"
+                f"Customer: {customer_info}\n\n"
+                f"Please choose an option:"
+            )
+            
+            agent_options = [option.value for option in AgentOptions]
+            send_list_message(
+                agent_msg,
+                agent_options,
+                agent,
+                phone_id
+            )
+            
+            return agent
+    
+    return None
+
+def forward_to_agent(customer_number, agent_number, message):
+    # Add to conversation history
+    add_to_conversation_history(customer_number, message, "user")
+    
+    # Get last 5 messages for context
+    history = get_conversation_history(customer_number)
+    context = "\n".join([f"{msg['sender']}: {msg['message']}" for msg in history[-5:]])
+    
+    # Forward message to agent
+    forward_msg = (
+        f"📩 *Message from customer*\n\n"
+        f"Recent conversation:\n{context}\n\n"
+        f"New message: {message}"
+    )
+    send_message(forward_msg, agent_number, phone_id)
+
+def forward_to_customer(agent_number, customer_number, message):
+    # Add to conversation history
+    add_to_conversation_history(customer_number, message, "agent")
+    
+    # Forward message to customer
+    send_message(message, customer_number, phone_id)
+
+def end_agent_conversation(customer_number, agent_number):
+    # Clear assignment
+    redis_client.delete(f"agent_assigned:{agent_number}")
+    clear_active_agent(customer_number)
+    
+    # Notify customer
+    send_message(
+        "The conversation with our agent has ended. How can I help you today?",
+        customer_number,
+        phone_id
+    )
+    
+    # Reset to welcome state
+    update_user_state(customer_number, {'step': 'welcome'})
+
+def human_agent(prompt, user_data, phone_id):
+    customer_number = user_data['sender']
+    agent_number = get_active_agent(customer_number)
+    
+    if not agent_number:
+        # No active agent, try to assign one
+        customer_name = user_data.get('name', 'Customer')
+        agent_number = assign_agent(customer_number, customer_name)
+        
+        if not agent_number:
+            send_message(
+                "All our agents are currently busy. Please try again later or leave a message and we'll get back to you.",
+                customer_number,
+                phone_id
+            )
+            return {'step': 'welcome'}
+        
+        send_message(
+            "We're connecting you to an agent. Please wait...",
+            customer_number,
+            phone_id
+        )
+        return {'step': 'agent_conversation'}
+    
+    # Check if this is a response from the agent
+    if customer_number in agent_numbers:
+        # This is an agent responding
+        selected_option = None
+        for option in AgentOptions:
+            if prompt.lower() in option.value.lower():
+                selected_option = option
+                break
+        
+        if selected_option == AgentOptions.ACCEPT:
+            # Agent accepted the conversation
+            customer_number = redis_client.get(f"agent_assigned:{agent_number}")
+            if customer_number:
+                customer_number = customer_number.decode('utf-8')
+                send_message(
+                    "You've accepted the conversation. You can now chat directly with the customer.",
+                    agent_number,
+                    phone_id
+                )
+                send_message(
+                    "You're now connected to an agent. Please describe your query.",
+                    customer_number,
+                    phone_id
+                )
+                update_user_state(customer_number, {'step': 'agent_conversation'})
+            return {'step': 'agent_conversation'}
+            
+        elif selected_option == AgentOptions.DECLINE:
+            # Agent declined the conversation
+            customer_number = redis_client.get(f"agent_assigned:{agent_number}")
+            if customer_number:
+                customer_number = customer_number.decode('utf-8')
+                send_message(
+                    "You've declined the conversation. Another agent will be assigned.",
+                    agent_number,
+                    phone_id
+                )
+                send_message(
+                    "The agent is unavailable. We're assigning another agent...",
+                    customer_number,
+                    phone_id
+                )
+                redis_client.delete(f"agent_assigned:{agent_number}")
+                clear_active_agent(customer_number)
+                return human_agent("", {'sender': customer_number}, phone_id)
+            return {'step': 'welcome'}
+            
+        elif selected_option == AgentOptions.END:
+            # Agent wants to end the conversation
+            customer_number = redis_client.get(f"agent_assigned:{agent_number}")
+            if customer_number:
+                customer_number = customer_number.decode('utf-8')
+                end_agent_conversation(customer_number, agent_number)
+            return {'step': 'welcome'}
+        
+        else:
+            # Forward agent's message to customer
+            customer_number = redis_client.get(f"agent_assigned:{agent_number}")
+            if customer_number:
+                customer_number = customer_number.decode('utf-8')
+                forward_to_customer(agent_number, customer_number, prompt)
+                return {'step': 'agent_conversation'}
+    
+    else:
+        # This is a customer message to forward to agent
+        if agent_number:
+            forward_to_agent(customer_number, agent_number, prompt)
+            return {'step': 'agent_conversation'}
+    
+    return {'step': 'welcome'}
 
 # Handlers
 def handle_welcome(prompt, user_data, phone_id):
@@ -730,10 +940,7 @@ def handle_contact_menu(prompt, user_data, phone_id):
                 phone_id
             )
             
-            # Notify admin
-            admin_msg = f"👤 {user_data['sender']} requested to speak with an agent."
-            send_message(admin_msg, owner_phone, phone_id)
-            
+            # Start agent conversation
             return human_agent("", user_data, phone_id)
             
         elif selected_option == ContactOptions.BACK:
@@ -795,7 +1002,8 @@ action_mapping = {
     "support_menu": handle_support_menu,
     "get_support_details": handle_get_support_details,
     "contact_menu": handle_contact_menu,
-    "get_callback_details": handle_get_callback_details
+    "get_callback_details": handle_get_callback_details,
+    "agent_conversation": human_agent
 }
 
 def get_action(current_state, prompt, user_data, phone_id):
@@ -848,14 +1056,18 @@ def webhook():
                 message = messages[0]
                 sender = message["from"]
 
+                # Add to conversation history if it's a user message
                 if "text" in message:
                     prompt = message["text"]["body"].strip()
+                    add_to_conversation_history(sender, prompt, "user")
                     message_handler(prompt, sender, phone_id)
                 elif "button" in message:
                     button_response = message["button"]["text"]
+                    add_to_conversation_history(sender, button_response, "user")
                     message_handler(button_response, sender, phone_id)
                 elif "interactive" in message and message["interactive"]["type"] == "list_reply":
                     list_response = message["interactive"]["list_reply"]["title"]
+                    add_to_conversation_history(sender, list_response, "user")
                     message_handler(list_response, sender, phone_id)
                 else:
                     return handle_welcome("", {'sender': sender}, phone_id)
