@@ -475,7 +475,7 @@ def handle_main_menu(prompt, user_data, phone_id):
             return {'step': 'main_menu'}
         
         if selected_option == MainMenuOptions.ABOUT:
-            about_msg = (Would you like to:)
+            about_msg = ("Would you like to:")
             
             about_options = [option.value for option in AboutOptions]
             send_list_message(
