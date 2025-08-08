@@ -300,7 +300,10 @@ def handle_main_menu(prompt, user_data, phone_id):
                 user_data['sender'],
                 phone_id
             )
-            update_user_state(user_data['sender'], {'step': 'get_quote_info'})
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'field': 'name' 
+            })
             return {'step': 'get_quote_info'}
             
         elif selected_option == MainMenuOptions.SUPPORT:
@@ -487,13 +490,13 @@ def handle_chatbot_menu(prompt, user_data, phone_id):
 
 def handle_get_quote_info(prompt, user_data, phone_id):
     try:
-        # Initialize user if not exists
+        # Initialize user object if it doesn't exist
         if 'user' not in user_data:
-            user = User(prompt, user_data['sender'])
+            user = User(name=prompt, phone=user_data['sender'])
             update_user_state(user_data['sender'], {
                 'step': 'get_quote_info',
                 'user': user.to_dict(),
-                'field': 'email'
+                'field': 'email'  # Next field to collect
             })
             send_message("Thank you. Please provide your email or WhatsApp number:", user_data['sender'], phone_id)
             return {
@@ -501,7 +504,7 @@ def handle_get_quote_info(prompt, user_data, phone_id):
                 'user': user.to_dict(),
                 'field': 'email'
             }
-            
+        
         user = User.from_dict(user_data['user'])
         current_field = user_data.get('field', 'email')
         
@@ -538,20 +541,20 @@ def handle_get_quote_info(prompt, user_data, phone_id):
             
         elif current_field == 'description':
             user.project_description = prompt
-            quote_options = [option.value for option in QuoteOptions]
             
-            # Send confirmation and options to user
-            confirmation_msg = (
+            # Show summary and callback options
+            summary_msg = (
                 "Here's what we have so far:\n\n"
-                f"📌 Name: {user.name}\n"
+                f"👤 Name: {user.name}\n"
                 f"📧 Contact: {user.email}\n"
                 f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
                 f"📝 Project: {user.project_description}\n\n"
                 "Would you like a call back after submitting?"
             )
             
+            quote_options = [option.value for option in QuoteOptions]
             send_list_message(
-                confirmation_msg,
+                summary_msg,
                 quote_options,
                 user_data['sender'],
                 phone_id
