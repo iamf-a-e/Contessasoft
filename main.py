@@ -474,8 +474,8 @@ def handle_chatbot_menu(prompt, user_data, phone_id):
                 user_data['sender'],
                 phone_id
             )
-            update_user_state(user_data['sender'], {'step': 'sample_chatbot_followup'})
-            return {'step': 'sample_chatbot_followup'}
+            update_user_state(user_data['sender'], {'step': 'get_quote_info'})
+            return {'step': 'get_quote_info'}
             
         elif selected_option == ChatbotOptions.BACK:
             return handle_main_menu(MainMenuOptions.SERVICES.value, user_data, phone_id)
