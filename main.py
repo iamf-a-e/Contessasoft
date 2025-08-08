@@ -56,7 +56,7 @@ class ServiceOptions(Enum):
     PAYMENTS = "Payment Integrations"
     AI = "AI and Automation"
     DASHBOARDS = "Custom Dashboards"
-    OTHER = "Something else - Write what you want in reply"
+    OTHER = "Service not specified"
 
 class ChatbotOptions(Enum):
     QUOTE = "Request a quote"
