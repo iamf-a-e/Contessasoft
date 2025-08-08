@@ -544,6 +544,7 @@ def handle_main_menu(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
+
 def handle_about_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
@@ -565,8 +566,21 @@ def handle_about_menu(prompt, user_data, phone_id):
                 "- Logistics tracking systems\n"
                 "- Custom business automation"
             )
+            
+            # Send the portfolio message first
             send_message(portfolio_msg, user_data['sender'], phone_id)
-            return handle_welcome("", user_data, phone_id)
+            
+            # Then send Yes/No buttons
+            send_button_message(
+                "Would you like to see something else?",
+                ["Yes", "No"],
+                user_data['sender'],
+                phone_id
+            )
+            
+            # Update state to wait for Yes/No response
+            update_user_state(user_data['sender'], {'step': 'portfolio_followup'})
+            return {'step': 'portfolio_followup'}
             
         elif selected_option == AboutOptions.PROFILE:
             send_message(
@@ -585,6 +599,36 @@ def handle_about_menu(prompt, user_data, phone_id):
         logging.error(f"Error in handle_about_menu: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+
+def handle_portfolio_followup(prompt, user_data, phone_id):
+    try:
+        if prompt.lower() == 'yes':
+            # Return to about menu
+            about_msg = (
+                "What would you like to know about us?"
+            )
+            about_options = [option.value for option in AboutOptions]
+            send_list_message(
+                about_msg,
+                about_options,
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'about_menu'})
+            return {'step': 'about_menu'}
+        elif prompt.lower() == 'no':
+            # Send goodbye message
+            send_message("Thank you! Have a good day!", user_data['sender'], phone_id)
+            return handle_welcome("", user_data, phone_id)
+        else:
+            send_message("Please select either 'Yes' or 'No'.", user_data['sender'], phone_id)
+            return {'step': 'portfolio_followup'}
+            
+    except Exception as e:
+        logging.error(f"Error in handle_portfolio_followup: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
 
 def handle_services_menu(prompt, user_data, phone_id):
     try:
@@ -1000,7 +1044,8 @@ action_mapping = {
     "get_support_details": handle_get_support_details,
     "contact_menu": handle_contact_menu,
     "get_callback_details": handle_get_callback_details,
-    "agent_conversation": human_agent
+    "agent_conversation": human_agent,
+    "portfolio_followup": handle_portfolio_followup
 }
 
 def get_action(current_state, prompt, user_data, phone_id):
