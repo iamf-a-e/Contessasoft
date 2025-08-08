@@ -546,7 +546,7 @@ def handle_main_menu(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 
-def handle_about_menu(prompt, user_data, phone_id):
+def handle_about_menu(prompt, user_data, phone_id, ttl):
     try:
         selected_option = None
         for option in AboutOptions:
@@ -601,7 +601,7 @@ def handle_about_menu(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
-def handle_portfolio_followup(prompt, user_data, phone_id):
+def handle_portfolio_followup(prompt, user_data, phone_id, ttl):
     try:
         if prompt.lower() == 'yes':
             # Return to about menu
@@ -631,7 +631,7 @@ def handle_portfolio_followup(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 
-def handle_services_menu(prompt, user_data, phone_id):
+def handle_services_menu(prompt, user_data, phone_id, ttl):
     try:
         selected_option = None
         for option in ServiceOptions:
