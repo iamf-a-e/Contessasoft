@@ -434,22 +434,34 @@ def handle_services_menu(prompt, user_data, phone_id):
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
-        # Find matching service with better matching logic
+        # Improved matching logic
         selected_option = None
+        best_match_score = 0
+        
         for option in ServiceOptions:
-            option_clean = option.value.lower()
-            if (clean_input in option_clean or 
-                any(word in clean_input for word in option_clean.split()) or
-                clean_input == option.name.lower()):
+            option_text = option.value.lower()
+            
+            # Calculate match score (exact match gets highest priority)
+            if clean_input == option_text:
                 selected_option = option
                 break
-        
+                
+            # Check for partial matches
+            match_score = 0
+            if clean_input in option_text:
+                match_score = len(clean_input) / len(option_text)
+            elif any(word in option_text for word in clean_input.split()):
+                match_score = 0.5  # Partial word match
+                
+            if match_score > best_match_score:
+                best_match_score = match_score
+                selected_option = option
+
         if not selected_option:
             error_msg = "🚫 Please select a valid service option:"
             service_options = [opt.value for opt in ServiceOptions]
             
             if not send_list_message(error_msg, service_options, user_data['sender'], phone_id):
-                # Fallback to simple message if list fails
                 send_message(
                     "Please reply with:\n" + "\n".join(f"- {opt.value}" for opt in ServiceOptions),
                     user_data['sender'],
@@ -457,31 +469,9 @@ def handle_services_menu(prompt, user_data, phone_id):
                 )
             return {'step': 'services_menu'}
 
-        # Handle specific service cases
-        if selected_option == ServiceOptions.CHATBOT:
-            chatbot_msg = "🤖 WhatsApp Chatbot Services:\nSelect an option:"
-            chatbot_options = [opt.value for opt in ChatbotOptions]
-            if not send_list_message(chatbot_msg, chatbot_options, user_data['sender'], phone_id):
-                send_message(
-                    "Reply with:\n1. 'Quote'\n2. 'Sample'\n3. 'Back'",
-                    user_data['sender'],
-                    phone_id
-                )
-            return {'step': 'chatbot_menu'}
-            
-        elif selected_option == ServiceOptions.OTHER:
-            send_message(
-                "✍️ Please describe your custom requirements:\n"
-                "(Include: project type, features needed, and timeline if possible)",
-                user_data['sender'],
-                phone_id
-            )
-            return {'step': 'get_custom_service'}
-            
-        else:
-            # Send service details with quote option
-            service_info = {
-                ServiceOptions.DOMAIN: (
+        # Handle the selected service
+        service_info = {
+            ServiceOptions.DOMAIN: (
                 "🌐 *Domain & Hosting Services*\n\n"
                 "• Domain registration (.co.zw, .com, etc.)\n"
                 "• Reliable web hosting with 99.9% uptime\n"
@@ -554,27 +544,34 @@ def handle_services_menu(prompt, user_data, phone_id):
                 "• Financial services\n"
                 "• And other business needs"
             )
-            }.get(selected_option, "ℹ️ Service information")
+        }.get(selected_option, "ℹ️ Service information coming soon")
+
+        # Store the selected service for quote reference
+        update_user_state(user_data['sender'], {
+            'step': 'service_detail',
+            'selected_service': selected_option.name,
+            'service_description': selected_option.value
+        })
+
+        try:
+            send_button_message(
+                service_info,
+                ["💬 Request Quote", "🔙 Back to Services"],
+                user_data['sender'],
+                phone_id
+            )
+        except Exception as e:
+            logging.error(f"Button message failed: {str(e)}")
+            send_message(
+                f"{service_info}\n\nReply with:\n1. 'Quote' for pricing\n2. 'Back' to return",
+                user_data['sender'],
+                phone_id
+            )
             
-            try:
-                send_button_message(
-                    service_info,
-                    ["💰 Get Quote", "🔙 Back"],
-                    user_data['sender'],
-                    phone_id
-                )
-            except Exception as e:
-                logging.error(f"Button message failed: {str(e)}")
-                send_message(
-                    f"{service_info}\n\nReply with 'Quote' or 'Back'",
-                    user_data['sender'],
-                    phone_id
-                )
-            
-            return {
-                'step': 'service_detail',
-                'selected_service': selected_option.name
-            }
+        return {
+            'step': 'service_detail',
+            'selected_service': selected_option.name
+        }
             
     except Exception as e:
         logging.error(f"Service menu error: {str(e)}\n{traceback.format_exc()}")
