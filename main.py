@@ -127,11 +127,14 @@ def get_user_state(phone_number):
         return json.loads(state_json)
     return {'step': 'welcome', 'sender': phone_number}
 
+
 def update_user_state(phone_number, updates, ttl_seconds=86400):
-    updates['phone_number'] = phone_number
-    if 'sender' not in updates:
-        updates['sender'] = phone_number
-    redis.set(phone_number, json.dumps(updates), ex=ttl_seconds)
+    current = get_user_state(phone_number)
+    current.update(updates)
+    current['phone_number'] = phone_number
+    if 'sender' not in current:
+        current['sender'] = phone_number
+    redis_client.setex(f"user_state:{phone_number}", 86400, json.dumps(current), ex=ttl_seconds)
 
 def get_conversation_history(phone_number):
     history_json = redis_client.get(f"conversation:{phone_number}")
