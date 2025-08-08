@@ -542,8 +542,36 @@ def handle_get_quote_info(prompt, user_data, phone_id):
             
         elif current_field == 'description':
             user.project_description = prompt
-            # ... rest of the description handling code ...
+            quote_options = [option.value for option in QuoteOptions]
             
+            send_list_message(
+                "Would you like a call back after submitting?",
+                quote_options,
+                user_data['sender'],
+                phone_id
+            )
+            
+            # Send info to admin
+            admin_msg = (
+                "📋 *New Quote Request*\n\n"
+                f"👤 Name: {user.name}\n"
+                f"📞 Phone: {user.phone}\n"
+                f"📧 Email: {user.email}\n"
+                f"🛠️ Service: {user.service_type.value if user.service_type else 'Other'}\n"
+                f"📝 Description: {user.project_description}"
+            )
+            send_message(admin_msg, owner_phone, phone_id)
+            
+            update_user_state(user_data['sender'], {
+                'step': 'quote_followup',
+                'user': user.to_dict()
+            })
+            return {
+                'step': 'quote_followup',
+                'user': user.to_dict()
+            }
+            
+             
     except Exception as e:
         logging.error(f"Error in handle_get_quote_info: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
