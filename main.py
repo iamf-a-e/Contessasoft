@@ -397,140 +397,199 @@ def handle_about_menu(prompt, user_data, phone_id):
 
 def handle_services_menu(prompt, user_data, phone_id):
     try:
+        # Clean the input prompt
+        cleaned_prompt = prompt.strip().lower()
+        
+        # Find matching service option
         selected_option = None
         for option in ServiceOptions:
-            if prompt.lower() in option.value.lower():
+            if cleaned_prompt in option.value.lower():
                 selected_option = option
                 break
-                
+        
+        # If no direct match, try partial matching
         if not selected_option:
-            send_message("❌ Invalid selection. Please choose an option from the list.", 
-                         user_data['sender'], phone_id)
-            # Resend services menu
-            services_msg = "🔧 *Our Services* 🔧\n\nPlease select a service:"
+            for option in ServiceOptions:
+                if cleaned_prompt in option.value.lower() or option.value.lower() in cleaned_prompt:
+                    selected_option = option
+                    break
+
+        if not selected_option:
+            error_msg = (
+                "🚫 *Invalid Selection*\n\n"
+                "Please choose a service from the options below:"
+            )
             service_options = [option.value for option in ServiceOptions]
             send_list_message(
-                services_msg,
+                error_msg,
                 service_options,
                 user_data['sender'],
                 phone_id
             )
             return {'step': 'services_menu'}
-            
+
+        # Handle Chatbot selection
         if selected_option == ServiceOptions.CHATBOT:
             chatbot_msg = (
-                "🤖 *WhatsApp Chatbots*\n\n"
-                "We build automated solutions for:\n"
-                "• Bill payments (ZESA, DStv, school fees)\n"
-                "• Customer service\n"
-                "• Order processing\n"
-                "• KYC and registration\n"
-                "• Ticketing and support\n\n"
+                "🤖 *WhatsApp Chatbot Services*\n\n"
+                "We specialize in:\n"
+                "• Payment Processing Bots\n"
+                "• Customer Support Bots\n"
+                "• Order Management Bots\n"
+                "• Registration & KYC Bots\n\n"
                 "What would you like to do?"
             )
             
-            chatbot_options = [option.value for option in ChatbotOptions]
-            send_list_message(
-                chatbot_msg,
-                chatbot_options,
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {
-                'step': 'chatbot_menu',
-                'selected_service': 'CHATBOT'
-            })
-            return {'step': 'chatbot_menu'}
+            chatbot_options = [
+                ChatbotOptions.QUOTE.value,
+                ChatbotOptions.SAMPLE.value,
+                ChatbotOptions.BACK.value
+            ]
             
+            try:
+                send_list_message(
+                    chatbot_msg,
+                    chatbot_options,
+                    user_data['sender'],
+                    phone_id
+                )
+                update_user_state(user_data['sender'], {
+                    'step': 'chatbot_menu',
+                    'selected_service': 'CHATBOT'
+                })
+                return {'step': 'chatbot_menu'}
+            except Exception as e:
+                logging.error(f"Failed to send chatbot menu: {str(e)}")
+                # Fallback to simple message
+                send_message(
+                    "Please reply with:\n1. 'Quote' for pricing\n2. 'Sample' to see examples\n3. 'Back' to return",
+                    user_data['sender'],
+                    phone_id
+                )
+                return {'step': 'chatbot_menu'}
+
+        # Handle Other/Custom service
         elif selected_option == ServiceOptions.OTHER:
             send_message(
-                "✏️ *Custom Service Request*\n\n"
-                "Please describe what you need in one message:\n"
-                "(Include: project type, features, and timeline if possible)",
+                "✍️ *Custom Service Request*\n\n"
+                "Please describe your requirements in detail:\n"
+                "(Include: project type, features needed, and timeline if possible)",
                 user_data['sender'],
                 phone_id
             )
             update_user_state(user_data['sender'], {
                 'step': 'get_custom_service',
-                'selected_service': 'CUSTOM'
+                'selected_service': 'CUSTOM',
+                'service_description': None
             })
             return {'step': 'get_custom_service'}
-            
+
+        # Handle all other services
         else:
-            service_info = {
+            service_details = {
                 ServiceOptions.DOMAIN: (
-                    "🌐 *Domain & Hosting*\n\n"
+                    "🌐 *Domain & Hosting Services*\n\n"
                     "• Domain registration (.co.zw, .com, etc.)\n"
-                    "• Reliable hosting with 99.9% uptime\n"
-                    "• Email hosting\n"
-                    "• SSL certificates"
+                    "• Reliable web hosting\n"
+                    "• Professional email setup\n"
+                    "• SSL certificates\n"
+                    "• 99.9% uptime guarantee"
                 ),
                 ServiceOptions.WEBSITE: (
                     "🖥️ *Website Development*\n\n"
                     "• Business websites\n"
                     "• E-commerce stores\n"
-                    "• Web applications\n"
-                    "• CMS integration\n"
+                    "• Custom web applications\n"
+                    "• CMS solutions\n"
                     "• SEO optimization"
                 ),
                 ServiceOptions.MOBILE: (
                     "📱 *Mobile App Development*\n\n"
-                    "• iOS and Android apps\n"
-                    "• Hybrid apps (single codebase)\n"
-                    "• App store submission\n"
-                    "• API integration"
+                    "• iOS & Android apps\n"
+                    "• Cross-platform solutions\n"
+                    "• App store deployment\n"
+                    "• API integration\n"
+                    "• Maintenance packages"
                 ),
                 ServiceOptions.PAYMENTS: (
                     "💳 *Payment Integrations*\n\n"
-                    "• Ecocash, OneMoney, ZimSwitch\n"
+                    "• Ecocash/OneMoney/ZimSwitch\n"
                     "• VISA/Mastercard gateways\n"
-                    "• PayPal, Paynow\n"
-                    "• Custom payment solutions"
+                    "• International payments\n"
+                    "• Custom payment solutions\n"
+                    "• PCI-compliant setups"
                 ),
                 ServiceOptions.AI: (
                     "🧠 *AI & Automation*\n\n"
-                    "• Chatbots\n"
+                    "• Intelligent chatbots\n"
                     "• Document processing\n"
                     "• Predictive analytics\n"
-                    "• Workflow automation"
+                    "• Workflow automation\n"
+                    "• Machine learning solutions"
                 ),
                 ServiceOptions.DASHBOARDS: (
                     "📊 *Business Dashboards*\n\n"
                     "• Real-time analytics\n"
                     "• Custom reporting\n"
                     "• Data visualization\n"
-                    "• KPI tracking"
+                    "• KPI tracking\n"
+                    "• Executive dashboards"
                 )
-            }.get(selected_option, "ℹ️ Service information not available.")
-            
-            # Store selected service for quote reference
-            user_data['selected_service'] = selected_option.name
-            
-            send_button_message(
-                service_info,
-                ["💰 Get Quote", "⬅️ Back"],
-                user_data['sender'],
-                phone_id
-            )
+            }.get(selected_option, "ℹ️ Service details coming soon.")
+
+            # Try sending as interactive buttons first
+            try:
+                send_button_message(
+                    service_details,
+                    ["💬 Request Quote", "🔙 Back to Services"],
+                    user_data['sender'],
+                    phone_id
+                )
+            except Exception as e:
+                logging.error(f"Button message failed: {str(e)}")
+                # Fallback to simple text message
+                send_message(
+                    f"{service_details}\n\n"
+                    "Reply with:\n"
+                    "1. 'Quote' to request pricing\n"
+                    "2. 'Back' to return to services",
+                    user_data['sender'],
+                    phone_id
+                )
+
             update_user_state(user_data['sender'], {
                 'step': 'service_detail',
-                'selected_service': selected_option.name
+                'selected_service': selected_option.name,
+                'service_description': selected_option.value
             })
             return {
                 'step': 'service_detail',
                 'selected_service': selected_option.name
             }
-            
-    except Exception as e:
-        logging.error(f"Error in handle_services_menu: {e}\n{traceback.format_exc()}")
-        send_message(
-            "⚠️ We encountered an error. Please try selecting a service again.",
-            user_data['sender'],
-            phone_id
-        )
-        # Return to services menu instead of welcome for better UX
-        return {'step': 'services_menu'}
 
+    except Exception as e:
+        logging.error(f"Critical error in services menu: {str(e)}\n{traceback.format_exc()}")
+        # Comprehensive error recovery
+        try:
+            send_message(
+                "⚠️ We're experiencing technical difficulties.\n\n"
+                "Please try selecting a service again or type 'menu' to start over.",
+                user_data['sender'],
+                phone_id
+            )
+            # Return to services menu instead of welcome for better UX
+            service_options = [option.value for option in ServiceOptions]
+            send_list_message(
+                "Our Services:",
+                service_options,
+                user_data['sender'],
+                phone_id
+            )
+            return {'step': 'services_menu'}
+        except Exception as fallback_error:
+            logging.error(f"Fallback failed: {str(fallback_error)}")
+            return {'step': 'welcome'}
+            
 
 def handle_chatbot_menu(prompt, user_data, phone_id):
     try:
