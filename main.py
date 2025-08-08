@@ -826,41 +826,47 @@ def webhook():
             for entry in data.get("entry", []):
                 for change in entry.get("changes", []):
                     value = change.get("value", {})
+                    if not value:
+                        continue
+
                     metadata = value.get("metadata", {})
                     phone_id = metadata.get("phone_number_id")
-
                     if not phone_id:
                         continue
 
                     messages = value.get("messages", [])
-                    contacts = value.get("contacts", [])
-
-                    if not messages or not contacts:
+                    if not messages:
                         continue
 
                     message = messages[0]
-                    contact = contacts[0]
                     sender = message.get("from")
+                    if not sender:
+                        continue
 
                     if "text" in message:
-                        prompt = message["text"].get("body", "").strip()
+                        text = message["text"]
+                        prompt = text.get("body", "").strip()
                         if prompt:
                             message_handler(prompt, sender, phone_id)
                     elif "button" in message:
-                        button_response = message["button"].get("text")
+                        button = message["button"]
+                        button_response = button.get("text")
                         if button_response:
                             message_handler(button_response, sender, phone_id)
-                    elif ("interactive" in message and 
-                          message["interactive"].get("type") == "list_reply"):
-                        list_response = message["interactive"]["list_reply"].get("title")
-                        if list_response:
-                            message_handler(list_response, sender, phone_id)
+                    elif "interactive" in message:
+                        interactive = message["interactive"]
+                        if interactive.get("type") == "list_reply":
+                            list_reply = interactive.get("list_reply", {})
+                            list_response = list_reply.get("title")
+                            if list_response:
+                                message_handler(list_response, sender, phone_id)
 
         except Exception as e:
             logging.error(f"Error processing webhook: {e}", exc_info=True)
+            return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-
+        
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
