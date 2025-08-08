@@ -19,7 +19,6 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-ttl = 86400  # 24 hours
 
 # Agent numbers - these should be added to your environment variables
 agent_numbers = os.environ.get("AGENT_NUMBERS", "").split(",")  # Format: "263123456789,263987654321"
@@ -128,13 +127,11 @@ def get_user_state(phone_number):
         return json.loads(state_json)
     return {'step': 'welcome', 'sender': phone_number}
 
-def update_user_state(phone_number, updates):
-    current = get_user_state(phone_number)
-    current.update(updates)
-    current['phone_number'] = phone_number
-    if 'sender' not in current:
-        current['sender'] = phone_number
-    redis_client.setex(f"user_state:{phone_number}", ttl, json.dumps(current))
+def update_user_state(phone_number, updates, ttl_seconds=86400):
+    updates['phone_number'] = phone_number
+    if 'sender' not in updates:
+        updates['sender'] = phone_number
+    redis.set(phone_number, json.dumps(updates), ex=ttl_seconds)
 
 def get_conversation_history(phone_number):
     history_json = redis_client.get(f"conversation:{phone_number}")
@@ -546,7 +543,7 @@ def handle_main_menu(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 
-def handle_about_menu(prompt, user_data, phone_id, ttl):
+def handle_about_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
         for option in AboutOptions:
@@ -601,7 +598,7 @@ def handle_about_menu(prompt, user_data, phone_id, ttl):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
-def handle_portfolio_followup(prompt, user_data, phone_id, ttl):
+def handle_portfolio_followup(prompt, user_data, phone_id):
     try:
         if prompt.lower() == 'yes':
             # Return to about menu
@@ -631,7 +628,7 @@ def handle_portfolio_followup(prompt, user_data, phone_id, ttl):
         return {'step': 'welcome'}
 
 
-def handle_services_menu(prompt, user_data, phone_id, ttl):
+def handle_services_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
         for option in ServiceOptions:
