@@ -236,7 +236,7 @@ def send_list_message(text, options, recipient, phone_id):
                 "text": text[:1024]  # Max 1024 chars for body
             },
             "footer": {
-                "text": "Select an option below"[:60]  # Max 60 chars for footer
+                "text": " "[:60]  # Max 60 chars for footer
             },
             "action": {
                 "button": "Options"[:20],  # Max 20 chars for button text
