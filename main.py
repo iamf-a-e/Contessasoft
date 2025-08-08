@@ -19,6 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
+ttl = 86400  # 24 hours
 
 # Agent numbers - these should be added to your environment variables
 agent_numbers = os.environ.get("AGENT_NUMBERS", "").split(",")  # Format: "263123456789,263987654321"
@@ -133,7 +134,7 @@ def update_user_state(phone_number, updates):
     current['phone_number'] = phone_number
     if 'sender' not in current:
         current['sender'] = phone_number
-    redis_client.setex(f"user_state:{phone_number}", 86400, json.dumps(current))
+    redis_client.setex(f"user_state:{phone_number}", ttl, json.dumps(current))
 
 def get_conversation_history(phone_number):
     history_json = redis_client.get(f"conversation:{phone_number}")
