@@ -586,12 +586,23 @@ def handle_about_menu(prompt, user_data, phone_id):
         elif selected_option == AboutOptions.PROFILE:
             send_message(
                 "You can download our company profile from: https://contessasoft.co.zw/profile.pdf\n\n"
-                "Would you like to request more information?",
+                ,
                 user_data['sender'],
                 phone_id
             )
             update_user_state(user_data['sender'], {'step': 'request_more_info'})
+            
+            send_button_message(
+                "Would you like to request more information?",
+                ["Yes", "No"],
+                user_data['sender'],
+                phone_id
+            )
+            
+            # Update state to wait for Yes/No response
+            update_user_state(user_data['sender'], {'step': 'request_more_info'})            
             return {'step': 'request_more_info'}
+            
             
         elif selected_option == AboutOptions.BACK:
             return handle_welcome("", user_data, phone_id)
@@ -603,11 +614,13 @@ def handle_about_menu(prompt, user_data, phone_id):
 
 def handle_portfolio_followup(prompt, user_data, phone_id):
     try:
-        if prompt.lower() == 'yes':
+        # Handle both text input and button responses
+        response = prompt.lower().strip()
+        
+        # Check for Yes responses (button title or text)
+        if response in ['yes', 'button_1']:  # 'button_1' is the automatic ID for first button
             # Return to about menu
-            about_msg = (
-                "What would you like to know about us?"
-            )
+            about_msg = "What would you like to know about us?"
             about_options = [option.value for option in AboutOptions]
             send_list_message(
                 about_msg,
@@ -617,19 +630,28 @@ def handle_portfolio_followup(prompt, user_data, phone_id):
             )
             update_user_state(user_data['sender'], {'step': 'about_menu'})
             return {'step': 'about_menu'}
-        elif prompt.lower() == 'no':
+            
+        # Check for No responses (button title or text)
+        elif response in ['no', 'button_2']:  # 'button_2' is the automatic ID for second button
             # Send goodbye message
             send_message("Thank you! Have a good day!", user_data['sender'], phone_id)
             return handle_welcome("", user_data, phone_id)
+            
         else:
-            send_message("Please select either 'Yes' or 'No'.", user_data['sender'], phone_id)
+            # For invalid responses, resend the buttons
+            send_button_message(
+                "Please select an option:",
+                ["Yes", "No"],
+                user_data['sender'],
+                phone_id
+            )
             return {'step': 'portfolio_followup'}
             
     except Exception as e:
         logging.error(f"Error in handle_portfolio_followup: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-
+        
 
 def handle_services_menu(prompt, user_data, phone_id):
     try:
