@@ -55,14 +55,14 @@ class AboutOptions(Enum):
     BACK = "Back to main menu"
 
 class ServiceOptions(Enum):
-    DOMAIN = "Domain Registration & Web Hosting"
-    WEBSITE = "Website and Web App Development"
+    DOMAIN = "Domain Registration"
+    WEBSITE = "Website Development"
     MOBILE = "Mobile App Development"
     CHATBOT = "WhatsApp Chatbots"
     PAYMENTS = "Payment Integrations"
     AI = "AI and Automation"
     DASHBOARDS = "Custom Dashboards"
-    OTHER = "Service not specified"
+    OTHER = "Other"
 
 class ChatbotOptions(Enum):
     QUOTE = "Request a quote"
