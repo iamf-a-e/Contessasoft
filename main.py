@@ -434,7 +434,26 @@ def handle_services_menu(prompt, user_data, phone_id):
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
-        # Improved matching logic
+        # Check if this is a button response
+        if clean_input in ["💬 request quote", "request quote"]:
+            send_message(
+                "To help us prepare a quote, please provide your full name.",
+                user_data['sender'],
+                phone_id
+            )
+            # Initialize empty user object
+            user = User(name="", phone=user_data['sender'])
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'name'  # First field to collect
+            })
+            return {'step': 'get_quote_info'}
+            
+        elif clean_input in ["🔙 back to services", "back to services", "back"]:
+            return handle_main_menu(MainMenuOptions.SERVICES.value, user_data, phone_id)
+        
+        # Improved matching logic for service selection
         selected_option = None
         best_match_score = 0
         
@@ -553,6 +572,7 @@ def handle_services_menu(prompt, user_data, phone_id):
             'service_description': selected_option.value
         })
 
+        # Send the service info with buttons
         try:
             send_button_message(
                 service_info,
