@@ -230,7 +230,7 @@ def send_list_message(text, options, recipient, phone_id):
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "Menu Options"[:60]  # Max 60 chars for header
+                "text": ""[:60]  # Max 60 chars for header
             },
             "body": {
                 "text": text[:1024]  # Max 1024 chars for body
