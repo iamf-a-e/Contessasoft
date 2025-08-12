@@ -434,43 +434,45 @@ def handle_services_menu(prompt, user_data, phone_id):
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
-        # Check if this is a button response
+        # Handle button responses first
         if clean_input in ["💬 request quote", "request quote"]:
-            send_message(
-                "To help us prepare a quote, please provide your full name.",
+            # This should work exactly like the QUOTE option in main menu
+            return handle_main_menu(MainMenuOptions.QUOTE.value, user_data, phone_id)
+            
+        elif clean_input in ["🔙 back to services", "back to services", "back"]:
+            # This should show the services menu again
+            services_msg = (
+                "🔧 *Our Services* 🔧\n\n"
+                "We offer complete digital solutions:\n"
+                "Select a service to learn more:"
+            )
+            service_options = [option.value for option in ServiceOptions]
+            service_options = [opt[:72] for opt in service_options]
+            
+            send_list_message(
+                services_msg,
+                service_options,
                 user_data['sender'],
                 phone_id
             )
-            # Initialize empty user object
-            user = User(name="", phone=user_data['sender'])
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'name'  # First field to collect
-            })
-            return {'step': 'get_quote_info'}
-            
-        elif clean_input in ["🔙 back to services", "back to services", "back"]:
-            return handle_main_menu(MainMenuOptions.SERVICES.value, user_data, phone_id)
+            return {'step': 'services_menu'}
         
-        # Improved matching logic for service selection
+        # Rest of the service selection logic remains the same
         selected_option = None
         best_match_score = 0
         
         for option in ServiceOptions:
             option_text = option.value.lower()
             
-            # Calculate match score (exact match gets highest priority)
             if clean_input == option_text:
                 selected_option = option
                 break
                 
-            # Check for partial matches
             match_score = 0
             if clean_input in option_text:
                 match_score = len(clean_input) / len(option_text)
             elif any(word in option_text for word in clean_input.split()):
-                match_score = 0.5  # Partial word match
+                match_score = 0.5
                 
             if match_score > best_match_score:
                 best_match_score = match_score
