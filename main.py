@@ -434,13 +434,25 @@ def handle_services_menu(prompt, user_data, phone_id):
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
-        # Handle button responses first
-        if clean_input in ["💬 request quote", "request quote"]:
-            # This should work exactly like the QUOTE option in main menu
-            return handle_main_menu(MainMenuOptions.QUOTE.value, user_data, phone_id)
+        # First check for button responses
+        if clean_input in ["💬 request quote", "request quote", "quote"]:
+            # This should work exactly like selecting QUOTE from main menu
+            send_message(
+                "To help us prepare a quote, please provide your full name.",
+                user_data['sender'],
+                phone_id
+            )
+            # Initialize empty user object
+            user = User(name="", phone=user_data['sender'])
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'name'  # First field to collect
+            })
+            return {'step': 'get_quote_info'}
             
         elif clean_input in ["🔙 back to services", "back to services", "back"]:
-            # This should show the services menu again
+            # This should show the full services menu again
             services_msg = (
                 "🔧 *Our Services* 🔧\n\n"
                 "We offer complete digital solutions:\n"
@@ -455,9 +467,10 @@ def handle_services_menu(prompt, user_data, phone_id):
                 user_data['sender'],
                 phone_id
             )
+            update_user_state(user_data['sender'], {'step': 'services_menu'})
             return {'step': 'services_menu'}
         
-        # Rest of the service selection logic remains the same
+        # Rest of the service selection logic
         selected_option = None
         best_match_score = 0
         
