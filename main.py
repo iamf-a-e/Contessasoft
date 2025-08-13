@@ -595,6 +595,7 @@ def handle_services_menu(prompt, user_data, phone_id):
                 user_data['sender'],
                 phone_id
             )
+            return {'step': 'get_quote_info'}
         except Exception as e:
             logging.error(f"Button message failed: {str(e)}")
             send_message(
