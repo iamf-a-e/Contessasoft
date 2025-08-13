@@ -725,7 +725,7 @@ def handle_get_quote_info(prompt, user_data, phone_id):
                 'user': user.to_dict(),
                 'field': 'email'
             })
-            send_message("Thank you. Please provide your email or WhatsApp number:", user_data['sender'], phone_id)
+            send_message("Thank you. Please provide your email:", user_data['sender'], phone_id)
             return {
                 'step': 'get_quote_info',
                 'user': user.to_dict(),
@@ -926,7 +926,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
         
-        return handle_welcome("", user_data, phone_id)
+        return human_agent("", user_data, phone_id)
         
     except Exception as e:
         logging.error(f"Error in handle_get_support_details: {e}")
@@ -1015,6 +1015,157 @@ def handle_get_callback_details(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
+
+def human_agent(prompt, user_data, phone_id):
+    try:
+        # Check if this is the initial handover request
+        if not user_data.get('agent_handover_initiated'):
+            # Send handover request to agent with accept/reject buttons
+            handover_msg = (
+                f"🔔 *New Chat Handover Request*\n\n"
+                f"👤 Customer: {user_data.get('name', 'User')}\n"
+                f"📞 Phone: {user_data['sender']}\n\n"
+                f"Would you like to accept this chat?"
+            )
+            
+            send_button_message(
+                handover_msg,
+                [
+                    {"id": "accept_chat", "title": "✅ Accept Chat"},
+                    {"id": "reject_chat", "title": "❌ Reject Chat"}
+                ],
+                owner_phone,
+                phone_id
+            )
+            
+            # Update user state to wait for agent response
+            update_user_state(user_data['sender'], {
+                'step': 'agent_handover',
+                'agent_handover_initiated': True,
+                'awaiting_agent_response': True,
+                'user': user_data.get('user', {}),
+                'original_sender': user_data['sender']
+            })
+            
+            # Notify user
+            send_message(
+                "We're connecting you to a support agent. Please wait...",
+                user_data['sender'],
+                phone_id
+            )
+            
+            return {
+                'step': 'agent_handover',
+                'agent_handover_initiated': True,
+                'awaiting_agent_response': True
+            }
+        
+        # Check if agent has accepted/rejected the chat
+        elif user_data.get('awaiting_agent_response'):
+            # This would be triggered when agent responds to the handover request
+            clean_input = prompt.strip().lower()
+            
+            if "accept" in clean_input or "✅" in prompt:
+                # Agent accepted the chat
+                update_user_state(user_data['sender'], {
+                    'awaiting_agent_response': False,
+                    'agent_active': True,
+                    'agent_phone': owner_phone  # Assuming owner_phone is the agent
+                })
+                
+                # Notify both parties
+                send_message(
+                    "An agent has accepted your chat. You may now communicate directly.",
+                    user_data['original_sender'],
+                    phone_id
+                )
+                send_message(
+                    f"You're now chatting with {user_data.get('name', 'the customer')}. "
+                    "Type 'exit' to end the chat.",
+                    owner_phone,
+                    phone_id
+                )
+                
+                return {
+                    'step': 'agent_chat',
+                    'agent_active': True
+                }
+                
+            elif "reject" in clean_input or "❌" in prompt:
+                # Agent rejected the chat
+                update_user_state(user_data['sender'], {
+                    'step': 'welcome',
+                    'agent_handover_initiated': False,
+                    'awaiting_agent_response': False
+                })
+                
+                send_message(
+                    "All agents are currently busy. Please try again later or leave a message.",
+                    user_data['original_sender'],
+                    phone_id
+                )
+                send_message(
+                    "You've rejected the chat request.",
+                    owner_phone,
+                    phone_id
+                )
+                
+                return handle_welcome("", user_data, phone_id)
+        
+        # Handle ongoing chat between user and agent
+        elif user_data.get('agent_active'):
+            # Check if agent wants to exit
+            if prompt.strip().lower() == 'exit' and user_data['sender'] == owner_phone:
+                # End the chat session
+                update_user_state(user_data['original_sender'], {
+                    'step': 'welcome',
+                    'agent_active': False,
+                    'agent_handover_initiated': False
+                })
+                
+                send_message(
+                    "The agent has ended the chat. Thank you for contacting us!",
+                    user_data['original_sender'],
+                    phone_id
+                )
+                send_message(
+                    "You've ended the chat session.",
+                    owner_phone,
+                    phone_id
+                )
+                
+                return handle_welcome("", {
+                    'sender': user_data['original_sender']
+                }, phone_id)
+            
+            # Forward messages between user and agent
+            if user_data['sender'] == owner_phone:
+                # Message from agent to user
+                send_message(
+                    f"👨‍💼 Agent: {prompt}",
+                    user_data['original_sender'],
+                    phone_id
+                )
+            else:
+                # Message from user to agent
+                send_message(
+                    f"👤 Customer: {prompt}",
+                    owner_phone,
+                    phone_id
+                )
+            
+            return {
+                'step': 'agent_chat',
+                'agent_active': True,
+                'original_sender': user_data.get('original_sender', user_data['sender'])
+            }
+    
+    except Exception as e:
+        logging.error(f"Error in human_agent: {e}")
+        send_message("An error occurred in chat handover. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+        
+
 # Action mapping
 action_mapping = {
     "welcome": handle_welcome,
@@ -1022,6 +1173,8 @@ action_mapping = {
     "about_menu": handle_about_menu,
     "services_menu": handle_services_menu,
     "service_detail": handle_service_detail,
+    "agent_handover": human_agent,
+    "agent_chat": human_agent,
     "chatbot_menu": handle_chatbot_menu,
     "get_quote_info": handle_get_quote_info,
     "quote_followup": handle_quote_followup,
@@ -1102,11 +1255,22 @@ def webhook():
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
+                                
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
                             button_id = button_reply.get("id")
                             button_title = button_reply.get("title", "").strip()
+
+                            if button_id == "accept_chat":
+                                prompt = "✅ Accept Chat"
+                            elif button_id == "reject_chat":
+                                prompt = "❌ Reject Chat"
+                            else:
+                                prompt = button_reply.get("title", "")
+                                
+                            if prompt:
+                                message_handler(prompt, sender, phone_id)
                             
                             # Map button IDs to standardized prompts
                             if button_id == "quote_btn":
