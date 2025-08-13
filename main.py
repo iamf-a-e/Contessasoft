@@ -1404,6 +1404,59 @@ def webhook():
                         text = message["text"].get("body", "").strip()
                         if text:
                             message_handler(text, sender, phone_id)
+
+                            # Handle agent messages
+                            if any(from_number.endswith(agent_num.replace("+", "")) for agent_num in AGENT_NUMBERS):
+                                # Find which agent this message is coming from
+                                selected_agent = next(agent_num for agent_num in AGENT_NUMBERS 
+                                                    if from_number.endswith(agent_num.replace("+", "")))
+                                
+                                agent_state = get_user_state(selected_agent)
+                                customer_number = agent_state.get("customer_number")
+                            
+                                if not customer_number:
+                                    send("⚠️ No customer to reply to. Wait for a new request.", selected_agent, phone_id)
+                                    return "OK"
+                            
+                                # Always re-store the agent state with the customer_number to ensure it's not lost
+                                agent_state["customer_number"] = customer_number
+                                agent_state["sender"] = selected_agent
+                                
+                                # Persist again defensively
+                                update_user_state(selected_agent, agent_state)
+                                if agent_state.get("step") == "agent_reply":
+                                    handle_agent_reply(message_text, customer_number, phone_id, agent_state)
+                                    
+                                    # 🔄 Re-save agent state to ensure customer_number is preserved
+                                    agent_state["customer_number"] = customer_number
+                                    agent_state["step"] = "talking_to_human_agent"
+                                    update_user_state(AGENT_NUMBER, agent_state)
+            
+                                    return "OK"
+                        
+                                if agent_state.get("step") == "talking_to_human_agent":
+                                    if message_text.strip() == "2":
+                                        # ✅ This is the agent saying "return to bot"
+                                        handle_agent_reply("2", customer_number, phone_id, agent_state)
+                                    else:
+                                        # ✅ Forward any other message to the customer
+                                        send(message_text, customer_number, phone_id)
+                                    return "OK"
+            
+                        
+                                send("⚠️ No active chat. Please wait for a new request.", AGENT_NUMBER, phone_id)
+                                return "OK"
+                        
+                            # Handle normal user messages (only if NOT agent)
+            
+                            user_data = get_user_state(from_number)
+                            user_data['sender'] = from_number
+                            
+                            # If user is talking to a human agent, suppress bot
+                            if handle_customer_message_during_agent_chat(message_text, user_data, phone_id):
+                                forward_message_to_agent(message_text, user_data, phone_id)
+                                update_user_state(from_number, user_data) 
+                                return "OK"
                     elif "interactive" in message:
                         interactive = message["interactive"]
                         # Handle list replies
