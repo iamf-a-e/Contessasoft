@@ -1018,6 +1018,9 @@ def handle_get_callback_details(prompt, user_data, phone_id):
 
 def human_agent(prompt, user_data, phone_id):
     try:
+        # Clean the input to handle both button clicks and text
+        clean_input = prompt.strip().lower()
+        
         # Check if this is the initial handover request
         if not user_data.get('agent_handover_initiated'):
             # Send handover request to agent with accept/reject buttons
@@ -1062,15 +1065,15 @@ def human_agent(prompt, user_data, phone_id):
         
         # Check if agent has accepted/rejected the chat
         elif user_data.get('awaiting_agent_response'):
-            # This would be triggered when agent responds to the handover request
-            clean_input = prompt.strip().lower()
-            
-            if "accept" in clean_input or "✅" in prompt:
+            # Handle both button clicks and text responses
+            if "accept" in clean_input or "✅ accept chat" in clean_input or prompt == "✅ Accept Chat":
                 # Agent accepted the chat
-                update_user_state(user_data['sender'], {
+                update_user_state(user_data['original_sender'], {
+                    'step': 'agent_chat',
                     'awaiting_agent_response': False,
                     'agent_active': True,
-                    'agent_phone': owner_phone  # Assuming owner_phone is the agent
+                    'agent_phone': owner_phone,
+                    'agent_handover_initiated': True
                 })
                 
                 # Notify both parties
@@ -1091,9 +1094,9 @@ def human_agent(prompt, user_data, phone_id):
                     'agent_active': True
                 }
                 
-            elif "reject" in clean_input or "❌" in prompt:
+            elif "reject" in clean_input or "❌ reject chat" in clean_input or prompt == "❌ Reject Chat":
                 # Agent rejected the chat
-                update_user_state(user_data['sender'], {
+                update_user_state(user_data['original_sender'], {
                     'step': 'welcome',
                     'agent_handover_initiated': False,
                     'awaiting_agent_response': False
@@ -1110,7 +1113,21 @@ def human_agent(prompt, user_data, phone_id):
                     phone_id
                 )
                 
-                return handle_welcome("", user_data, phone_id)
+                return handle_welcome("", {
+                    'sender': user_data['original_sender']
+                }, phone_id)
+            else:
+                # Invalid response from agent - resend the options
+                send_button_message(
+                    "Please choose an option:",
+                    [
+                        {"id": "accept_chat", "title": "✅ Accept Chat"},
+                        {"id": "reject_chat", "title": "❌ Reject Chat"}
+                    ],
+                    owner_phone,
+                    phone_id
+                )
+                return user_data
         
         # Handle ongoing chat between user and agent
         elif user_data.get('agent_active'):
@@ -1247,41 +1264,47 @@ def webhook():
                         text = message["text"].get("body", "").strip()
                         if text:
                             message_handler(text, sender, phone_id)
+                    
                     elif "interactive" in message:
                         interactive = message["interactive"]
+                        
                         # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
-                                
+                        
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
                             button_id = button_reply.get("id")
                             button_title = button_reply.get("title", "").strip()
-
+                            
+                            # First check for agent handover buttons
                             if button_id == "accept_chat":
                                 prompt = "✅ Accept Chat"
                             elif button_id == "reject_chat":
                                 prompt = "❌ Reject Chat"
-                            else:
-                                prompt = button_reply.get("title", "")
-                                
-                            if prompt:
-                                message_handler(prompt, sender, phone_id)
-                            
-                            # Map button IDs to standardized prompts
-                            if button_id == "quote_btn":
+                            # Then check for other buttons
+                            elif button_id == "quote_btn":
                                 prompt = "Request Quote"
                             elif button_id == "back_btn":
                                 prompt = "Back to Services"
                             else:
                                 prompt = button_title
-                                
+                            
                             if prompt:
-                                message_handler(prompt, sender, phone_id)
+                                # Get current state to determine context
+                                user_state = get_user_state(sender)
+                                
+                                # Special handling for agent responses
+                                if button_id in ["accept_chat", "reject_chat"] and user_state.get('awaiting_agent_response'):
+                                    # This is an agent responding to handover request
+                                    message_handler(prompt, sender, phone_id)
+                                else:
+                                    # Regular button press from user
+                                    message_handler(button_title, sender, phone_id)
 
         except Exception as e:
             logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
