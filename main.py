@@ -1246,14 +1246,17 @@ def webhook():
                         text = message["text"].get("body", "").strip()
                         if text:
                             message_handler(text, sender, phone_id)
+                    
                     elif "interactive" in message:
                         interactive = message["interactive"]
+                        
                         # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
+                        
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
@@ -1261,13 +1264,25 @@ def webhook():
                             button_title = button_reply.get("title", "").strip()
                             
                             # Map button IDs to standardized prompts
-                            if button_id == "quote_btn":
+                            if button_id == "accept_chat_btn":
+                                prompt = "accept"
+                            elif button_id == "reject_chat_btn":
+                                prompt = "reject"
+                            elif button_id == "quote_btn":
                                 prompt = "Request Quote"
                             elif button_id == "back_btn":
                                 prompt = "Back to Services"
                             else:
                                 prompt = button_title
-                                
+                            
+                            # Special handling for agent responses
+                            if button_id in ["accept_chat_btn", "reject_chat_btn"]:
+                                # Get the agent's current state
+                                agent_state = get_user_state(sender)
+                                if agent_state.get('step') == 'agent_pending':
+                                    message_handler(prompt, sender, phone_id)
+                                    return jsonify({"status": "ok"}), 200
+                            
                             if prompt:
                                 message_handler(prompt, sender, phone_id)
 
