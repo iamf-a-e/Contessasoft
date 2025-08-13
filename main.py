@@ -553,35 +553,45 @@ def handle_services_menu(prompt, user_data, phone_id):
             'service_description': selected_option.value
         })
 
+        # Prepare the buttons
+        buttons = [
+            {"type": "reply", "reply": {"id": "quote_btn", "title": "💬 Request Quote"}},
+            {"type": "reply", "reply": {"id": "back_btn", "title": "🔙 Back to Services"}}
+        ]
+
+        # Send interactive button message
+        url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
+        headers = {
+            'Authorization': f'Bearer {wa_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            "messaging_product": "whatsapp",
+            "to": user_data['sender'],
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": service_info},
+                "action": {"buttons": buttons}
+            }
+        }
+
         try:
-            # Send the service info with buttons
-            send_button_message(
-                service_info,
-                ["💬 Request Quote", "🔙 Back to Services"],
-                user_data['sender'],
-                phone_id
-            )
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
             
-            # Check if the user clicked "Request Quote"
-            if "quote" in clean_input or "request quote" in clean_input:
-                # Initialize user object and update state to collect quote info
-                user = User(name="", phone=user_data['sender'])
-                update_user_state(user_data['sender'], {
-                    'step': 'get_quote_info',
-                    'user': user.to_dict(),
-                    'field': 'name',  # First field to collect
-                    'selected_service': selected_option.name,
-                    'service_description': selected_option.value
-                })
-                send_message("To help us prepare a quote, please provide your full name:", user_data['sender'], phone_id)
-                return {
-                    'step': 'get_quote_info',
-                    'user': user.to_dict(),
-                    'field': 'name'
-                }
-                
-        except Exception as e:
-            logging.error(f"Button message failed: {str(e)}")
+            # Update state to handle button responses
+            update_user_state(user_data['sender'], {
+                'step': 'service_detail',
+                'selected_service': selected_option.name,
+                'service_description': selected_option.value,
+                'awaiting_button_response': True
+            })
+            
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Failed to send button message: {e}")
+            # Fallback to simple message
             send_message(
                 f"{service_info}\n\nReply with:\n1. 'Quote' for pricing\n2. 'Back' to return",
                 user_data['sender'],
@@ -596,6 +606,67 @@ def handle_services_menu(prompt, user_data, phone_id):
     except Exception as e:
         logging.error(f"Service menu error: {str(e)}\n{traceback.format_exc()}")
         send_message("⚠️ Please try selecting again or type 'menu'", user_data['sender'], phone_id)
+        return {'step': 'services_menu'}
+
+
+def handle_service_detail(prompt, user_data, phone_id):
+    try:
+        # Clean the input and check for button responses
+        clean_input = prompt.strip().lower()
+        
+        # Handle "Request Quote" button or text
+        if "quote" in clean_input or "request quote" in clean_input or "💬" in prompt:
+            # Initialize user object for quote collection
+            user = User(name="", phone=user_data['sender'])
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'name',  # First field to collect
+                'selected_service': user_data.get('selected_service'),
+                'service_description': user_data.get('service_description')
+            })
+            send_message("To help us prepare a quote, please provide your full name:", user_data['sender'], phone_id)
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'name'
+            }
+            
+        # Handle "Back to Services" button or text
+        elif "back" in clean_input or "services" in clean_input or "🔙" in prompt:
+            services_msg = (
+                "🔧 *Our Services* 🔧\n\n"
+                "We offer complete digital solutions:\n"
+                "Select a service to learn more:"
+            )
+            service_options = [option.value for option in ServiceOptions]
+            send_list_message(
+                services_msg,
+                service_options,
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'services_menu'})
+            return {'step': 'services_menu'}
+            
+        # If the input doesn't match any expected option
+        else:
+            # Resend the service info with buttons
+            service_info = (
+                f"ℹ️ *{user_data.get('service_description', 'Selected Service')}*\n\n"
+                "Please choose an option:"
+            )
+            send_button_message(
+                service_info,
+                ["💬 Request Quote", "🔙 Back to Services"],
+                user_data['sender'],
+                phone_id
+            )
+            return {'step': 'service_detail'}
+            
+    except Exception as e:
+        logging.error(f"Error in handle_service_detail: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'services_menu'}
         
 
@@ -946,6 +1017,7 @@ action_mapping = {
     "main_menu": handle_main_menu,
     "about_menu": handle_about_menu,
     "services_menu": handle_services_menu,
+    "service_detail": handle_service_detail,
     "chatbot_menu": handle_chatbot_menu,
     "get_quote_info": handle_get_quote_info,
     "quote_followup": handle_quote_followup,
@@ -1029,6 +1101,21 @@ def webhook():
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
+
+                    
+                    elif "interactive" in message:
+                        interactive = message["interactive"]
+                        if interactive.get("type") == "button_reply":
+                            button_id = interactive.get("button_reply", {}).get("id")
+                            if button_id == "quote_btn":
+                                prompt = "Request Quote"  # Standardize the prompt
+                            elif button_id == "back_btn":
+                                prompt = "Back to Services"
+                            else:
+                                prompt = interactive.get("button_reply", {}).get("title", "")
+                                
+                            if prompt:
+                                message_handler(prompt, sender, phone_id)
 
         except Exception as e:
             logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
