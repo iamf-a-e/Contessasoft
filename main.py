@@ -434,58 +434,24 @@ def handle_services_menu(prompt, user_data, phone_id):
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
-        # First check for button responses
-        if clean_input in ["💬 request quote", "request quote", "quote"]:
-            # This should work exactly like selecting QUOTE from main menu
-            send_message(
-                "To help us prepare a quote, please provide your full name.",
-                user_data['sender'],
-                phone_id
-            )
-            # Initialize empty user object
-            user = User(name="", phone=user_data['sender'])
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'name'  # First field to collect
-            })
-            return {'step': 'get_quote_info'}
-            
-        elif clean_input in ["🔙 back to services", "back to services", "back"]:
-            # This should show the full services menu again
-            services_msg = (
-                "🔧 *Our Services* 🔧\n\n"
-                "We offer complete digital solutions:\n"
-                "Select a service to learn more:"
-            )
-            service_options = [option.value for option in ServiceOptions]
-            service_options = [opt[:72] for opt in service_options]
-            
-            send_list_message(
-                services_msg,
-                service_options,
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {'step': 'services_menu'})
-            return {'step': 'services_menu'}
-        
-        # Rest of the service selection logic
+        # Improved matching logic
         selected_option = None
         best_match_score = 0
         
         for option in ServiceOptions:
             option_text = option.value.lower()
             
+            # Calculate match score (exact match gets highest priority)
             if clean_input == option_text:
                 selected_option = option
                 break
                 
+            # Check for partial matches
             match_score = 0
             if clean_input in option_text:
                 match_score = len(clean_input) / len(option_text)
             elif any(word in option_text for word in clean_input.split()):
-                match_score = 0.5
+                match_score = 0.5  # Partial word match
                 
             if match_score > best_match_score:
                 best_match_score = match_score
@@ -587,22 +553,33 @@ def handle_services_menu(prompt, user_data, phone_id):
             'service_description': selected_option.value
         })
 
-        # Send the service info with buttons
         try:
+            # Send the service info with buttons
             send_button_message(
                 service_info,
                 ["💬 Request Quote", "🔙 Back to Services"],
                 user_data['sender'],
                 phone_id
             )
-            user = User(name="", phone=user_data['sender'])
-            update_user_state(user_data['sender'], {
-                'step': 'services_menu',
-                'user': user.to_dict(),
-                'field': 'name'  # First field to collect
-            })
-            return {'step': 'services_menu'}
             
+            # Check if the user clicked "Request Quote"
+            if "quote" in clean_input or "request quote" in clean_input:
+                # Initialize user object and update state to collect quote info
+                user = User(name="", phone=user_data['sender'])
+                update_user_state(user_data['sender'], {
+                    'step': 'get_quote_info',
+                    'user': user.to_dict(),
+                    'field': 'name',  # First field to collect
+                    'selected_service': selected_option.name,
+                    'service_description': selected_option.value
+                })
+                send_message("To help us prepare a quote, please provide your full name:", user_data['sender'], phone_id)
+                return {
+                    'step': 'get_quote_info',
+                    'user': user.to_dict(),
+                    'field': 'name'
+                }
+                
         except Exception as e:
             logging.error(f"Button message failed: {str(e)}")
             send_message(
