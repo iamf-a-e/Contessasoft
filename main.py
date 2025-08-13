@@ -1218,7 +1218,11 @@ def agent_response(prompt, user_data, phone_id):
         
         # If no active conversation, return to welcome
         return handle_welcome("", user_data, phone_id)
-        
+
+    except Exception as e:
+        logging.error(f"Error in agent_response: {e}")
+        send_message("An error occurred in agent communication. Returning to main menu.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}        
 
 # Action mapping
 action_mapping = {
