@@ -175,12 +175,12 @@ def send_button_message(text, buttons, recipient, phone_id):
     }
     
     button_items = []
-    for i, button in enumerate(buttons[:3]):  # WhatsApp allows max 3 buttons
+    for button in buttons[:3]:  # WhatsApp allows max 3 buttons
         button_items.append({
             "type": "reply",
             "reply": {
-                "id": f"button_{i+1}",
-                "title": button
+                "id": button.get("id", f"button_{len(button_items)+1}"),
+                "title": button.get("title", "Button")
             }
         })
     
@@ -204,6 +204,7 @@ def send_button_message(text, buttons, recipient, phone_id):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send button message: {e}")
+
 
 def send_list_message(text, options, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -658,7 +659,10 @@ def handle_service_detail(prompt, user_data, phone_id):
             )
             send_button_message(
                 service_info,
-                ["💬 Request Quote", "🔙 Back to Services"],
+                [
+                    {"id": "quote_btn", "title": "💬 Request Quote"},
+                    {"id": "back_btn", "title": "🔙 Back to Services"}
+                ],
                 user_data['sender'],
                 phone_id
             )
@@ -1090,29 +1094,27 @@ def webhook():
                         text = message["text"].get("body", "").strip()
                         if text:
                             message_handler(text, sender, phone_id)
-                    elif "button" in message:
-                        button_text = message["button"].get("text", "").strip()
-                        if button_text:
-                            message_handler(button_text, sender, phone_id)
                     elif "interactive" in message:
                         interactive = message["interactive"]
+                        # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
-
-                    
-                    elif "interactive" in message:
-                        interactive = message["interactive"]
-                        if interactive.get("type") == "button_reply":
-                            button_id = interactive.get("button_reply", {}).get("id")
+                        # Handle button replies
+                        elif interactive.get("type") == "button_reply":
+                            button_reply = interactive.get("button_reply", {})
+                            button_id = button_reply.get("id")
+                            button_title = button_reply.get("title", "").strip()
+                            
+                            # Map button IDs to standardized prompts
                             if button_id == "quote_btn":
-                                prompt = "Request Quote"  # Standardize the prompt
+                                prompt = "Request Quote"
                             elif button_id == "back_btn":
                                 prompt = "Back to Services"
                             else:
-                                prompt = interactive.get("button_reply", {}).get("title", "")
+                                prompt = button_title
                                 
                             if prompt:
                                 message_handler(prompt, sender, phone_id)
@@ -1122,7 +1124,7 @@ def webhook():
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-               
+        
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
