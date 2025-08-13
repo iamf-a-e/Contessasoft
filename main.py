@@ -1287,7 +1287,7 @@ def webhook():
             logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
-        return jsonify({"status": "ok"}), 200
+        return jsonify({"status": "ok"}), 200 
         
 
 if __name__ == "__main__":
