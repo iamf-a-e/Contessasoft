@@ -927,7 +927,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
         
-        return handle_welcome("", user_data, phone_id)
+        return human_agent("", user_data, phone_id)
         
     except Exception as e:
         logging.error(f"Error in handle_get_support_details: {e}")
