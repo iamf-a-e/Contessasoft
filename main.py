@@ -597,11 +597,11 @@ def handle_services_menu(prompt, user_data, phone_id):
             )
             user = User(name="", phone=user_data['sender'])
             update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
+                'step': 'services_menu',
                 'user': user.to_dict(),
                 'field': 'name'  # First field to collect
             })
-            return {'step': 'get_quote_info'}
+            return {'step': 'services_menu'}
             
         except Exception as e:
             logging.error(f"Button message failed: {str(e)}")
