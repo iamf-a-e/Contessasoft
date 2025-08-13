@@ -1092,6 +1092,14 @@ def agent_response(prompt, user_data, phone_id):
         conv_data = json.loads(conv_data)
         customer_number = conv_data.get('customer')
 
+        # Check if this is a button response from the interactive message
+        if isinstance(prompt, dict) and 'button_reply' in prompt:
+            button_id = prompt['button_reply'].get('id')
+            if button_id == "accept_chat_btn":
+                prompt = "accept"
+            elif button_id == "reject_chat_btn":
+                prompt = "reject"
+
         # Handle agent responses (button or text)
         if user_data.get('awaiting_response'):
             # Clear the response flag immediately
@@ -1112,12 +1120,14 @@ def agent_response(prompt, user_data, phone_id):
                 # Update states
                 update_user_state(user_data['sender'], {
                     'step': 'agent_chat',
-                    'active_chat': True
+                    'active_chat': True,
+                    'conversation_id': conversation_id
                 })
                 
                 update_user_state(customer_number, {
                     'step': 'agent_chat',
-                    'assigned_agent': user_data['sender']
+                    'assigned_agent': user_data['sender'],
+                    'conversation_id': conversation_id
                 })
 
                 # Notify both parties
@@ -1154,7 +1164,7 @@ def agent_response(prompt, user_data, phone_id):
         logging.error(f"Agent response error: {str(e)}")
         send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-
+        
 
 # Action mapping
 action_mapping = {
@@ -1182,9 +1192,16 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    text = prompt.strip().lower()
+    # Handle interactive messages (button clicks)
+    if isinstance(prompt, dict) and 'interactive' in prompt:
+        interactive = prompt['interactive']
+        if interactive.get('type') == 'button_reply':
+            button_reply = interactive.get('button_reply', {})
+            prompt = button_reply.get('id', '')
+    
+    text = prompt.strip().lower() if isinstance(prompt, str) else str(prompt).lower()
 
-    if text in ["hi", "hello", "hie",  "hey", "start"]:
+    if text in ["hi", "hello", "hie", "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
@@ -1196,6 +1213,7 @@ def message_handler(prompt, sender, phone_id):
     step = user_state.get('step') or 'welcome'
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
+    
 
 @app.route("/", methods=["GET"])
 def index():
@@ -1257,27 +1275,23 @@ def webhook():
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
-                            button_id = button_reply.get("id")
                             
                             # Special handling for agent buttons
-                            if current_step in ['agent_pending', 'agent_response']:
-                                if button_id == "accept_chat_btn":
-                                    prompt = "accept_chat_btn"
-                                elif button_id == "reject_chat_btn":
-                                    prompt = "reject_chat_btn"
-                                else:
-                                    prompt = button_id
+                            if current_step in ['agent_pending', 'agent_chat', 'awaiting_agent']:
+                                # Pass the entire interactive object for proper handling
+                                message_handler(interactive, user_state, phone_id)
                             else:
-                                # Standard button handling
+                                # Standard button handling for other cases
+                                button_id = button_reply.get("id")
                                 if button_id == "quote_btn":
                                     prompt = "Request Quote"
                                 elif button_id == "back_btn":
                                     prompt = "Back to Services"
                                 else:
                                     prompt = button_id
-                            
-                            if prompt:
-                                message_handler(prompt, sender, phone_id)
+                                
+                                if prompt:
+                                    message_handler(prompt, sender, phone_id)
 
         except Exception as e:
             logging.error(f"Webhook error: {str(e)}\n{traceback.format_exc()}")
