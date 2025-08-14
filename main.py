@@ -1213,8 +1213,20 @@ action_mapping = {
 }
 
 def get_action(current_state, prompt, user_data, phone_id):
+    # Determine which handler will be used
     handler = action_mapping.get(current_state, handle_welcome)
-    return handler(prompt, user_data, phone_id)
+
+    # Log the routing info
+    logging.info(f"[get_action] State: {current_state}, Prompt: {prompt}, "
+                 f"Handler: {handler.__name__}, Sender: {user_data.get('sender')}")
+
+    try:
+        return handler(prompt, user_data, phone_id)
+    except Exception as e:
+        logging.error(f"[get_action] Error in handler {handler.__name__} for state {current_state}: {e}", exc_info=True)
+        # Fallback to welcome
+        return handle_welcome("", user_data, phone_id)
+
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
