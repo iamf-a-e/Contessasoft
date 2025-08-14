@@ -1069,7 +1069,7 @@ def human_agent(prompt, user_data, phone_id):
         )
         
         return {
-            'step': 'human_agent',
+            'step': 'agent_response',
             'assigned_agent': selected_agent,
             'conversation_id': conversation_id,
             'awaiting_agent_response': True
@@ -1155,18 +1155,7 @@ def agent_response(prompt, user_data, phone_id):
                             conv_data['customer'],
                             phone_id
                         )
-                    else:
-                        # Customer is exiting
-                        send_message(
-                            "You've ended the conversation with the agent. You're now back with the bot.",
-                            conv_data['customer'],
-                            phone_id
-                        )
-                        send_message(
-                            "The customer has ended the conversation.",
-                            conv_data['agent'],
-                            phone_id
-                        )
+                   
                     
                     # Clean up
                     redis_client.delete(f"agent_conversation:{conversation_id}")
@@ -1213,7 +1202,7 @@ action_mapping = {
     "get_support_details": handle_get_support_details,
     "contact_menu": handle_contact_menu,
     "get_callback_details": handle_get_callback_details,
-    "human_agent": human_agent,
+    "human_agent": agent_response,
     "agent_response": agent_response
 }
 
