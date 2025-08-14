@@ -927,12 +927,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
 
-        update_user_state(agent_number, {
-        "step": "agent_pending",
-        "awaiting_response": True,
-        "conversation_id": conversation_id
-    })
-
+        update_user_state(agent_number, {"step": "agent_pending"})
         return human_agent("", user_data, phone_id)
         
     except Exception as e:
