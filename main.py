@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["+263785019494", "263785019494", "0785019494"] 
+AGENT_NUMBERS = ["+263785019494", "263785019494", "0785019494"]
 
 # Redis client setup
 redis_client = Redis(
