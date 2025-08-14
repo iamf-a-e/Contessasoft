@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify, render_template
 import json
 import traceback
 from enum import Enum
-from upstash_redis import Redis
+from upstash_redis import Redis 
 import redis
 
 app = Flask(__name__)
