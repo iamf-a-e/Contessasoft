@@ -27,6 +27,8 @@ redis_client = Redis(
     token=os.environ.get('UPSTASH_REDIS_TOKEN')
 )
 
+selected_agent = random.choice(AGENT_NUMBERS)
+
 
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
 missing_vars = [var for var in required_vars if not os.getenv(var)]
@@ -929,7 +931,12 @@ def handle_get_support_details(prompt, user_data, phone_id):
             user_data['sender'],
             phone_id
         )
-        
+        # Save agent state so they can respond to Accept/Reject
+        update_user_state(selected_agent, {
+            'step': 'agent_response',
+            'conversation_id': conversation_id,
+            'awaiting_agent_response': True
+        })
         
         return human_agent("", user_data, phone_id)
         
