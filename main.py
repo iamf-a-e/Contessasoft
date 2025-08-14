@@ -927,7 +927,6 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
 
-        update_user_state(agent_number, {"step": "agent_pending"})
         return human_agent("", user_data, phone_id)
         
     except Exception as e:
@@ -1020,6 +1019,8 @@ def handle_get_callback_details(prompt, user_data, phone_id):
 
 def human_agent(prompt, user_data, phone_id):
     """Initiates handover to human agent"""
+    selected_agent = random.choice(AGENT_NUMBERS)
+    update_user_state(selected_agent, {"step": "agent_pending"})
     try:
         if not AGENT_NUMBERS:
             send_message("No agents available. Please try later.", user_data['sender'], phone_id)
