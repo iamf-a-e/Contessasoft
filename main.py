@@ -911,6 +911,7 @@ def handle_support_menu(prompt, user_data, phone_id):
         return {'step': 'welcome'}
 
 def handle_get_support_details(prompt, user_data, phone_id):
+    selected_agent = random.choice(AGENT_NUMBERS)
     try:
         user = User.from_dict(user_data['user'])
         
@@ -929,7 +930,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
         
-        selected_agent = random.choice(AGENT_NUMBERS)
+        
         # Save agent state so they can respond to Accept/Reject
         update_user_state(selected_agent, {
             'step': 'agent_response',
