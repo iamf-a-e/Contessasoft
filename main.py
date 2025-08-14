@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["+263785019494"]
+AGENT_NUMBERS = ["+263785019494", "263785019494", "0785019494"]
 
 # Redis client setup
 redis_client = Redis(
@@ -27,8 +27,7 @@ redis_client = Redis(
     token=os.environ.get('UPSTASH_REDIS_TOKEN')
 )
 
-selected_agent = random.choice(AGENT_NUMBERS)
-conversation_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+# Global variables removed - each conversation will have its own agent and conversation ID
 
 
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
@@ -122,22 +121,49 @@ class User:
             user.support_type = SupportOptions(data["support_type"])
         return user
 
+# Phone number normalization function
+def normalize_phone_number(phone):
+    """Normalize phone number to handle different formats"""
+    if not phone:
+        return phone
+    
+    # Remove any non-digit characters except +
+    cleaned = ''.join(c for c in phone if c.isdigit() or c == '+')
+    
+    # Handle Zimbabwe numbers
+    if cleaned.startswith('+263'):
+        return cleaned
+    elif cleaned.startswith('263'):
+        return '+' + cleaned
+    elif cleaned.startswith('0'):
+        return '+263' + cleaned[1:]
+    else:
+        return cleaned
+
 # Redis state functions
 def get_user_state(phone_number):
     state_json = redis_client.get(f"user_state:{phone_number}")
     if state_json:
-        return json.loads(state_json)
-    return {'step': 'welcome', 'sender': phone_number}
+        state = json.loads(state_json)
+        print(f"Retrieved state for {phone_number}: {state}")
+        return state
+    default_state = {'step': 'welcome', 'sender': phone_number}
+    print(f"No state found for {phone_number}, returning default: {default_state}")
+    return default_state
 
 def update_user_state(phone_number, updates):
     print("#########################")
-    print(updates)
+    print(f"Updating state for {phone_number}")
+    print(f"Updates: {updates}")
     current = get_user_state(phone_number)
+    print(f"Current state: {current}")
     current.update(updates)
     current['phone_number'] = phone_number
     if 'sender' not in current:
         current['sender'] = phone_number
+    print(f"Final state to save: {current}")
     redis_client.setex(f"user_state:{phone_number}", 86400, json.dumps(current))
+    print(f"State saved for {phone_number}")
 
 def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -923,7 +949,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             f"🆘 *New Support Request* ({user.support_type.value})\n\n"
             f"👤 From: {user.name} ({user.phone})\n"
             f"📝 Details: {prompt}"
-        ),
+        )
         send_message(admin_msg, owner_phone, phone_id)
         
         send_message(
@@ -932,13 +958,8 @@ def handle_get_support_details(prompt, user_data, phone_id):
             user_data['sender'],
             phone_id
         )
-        # Save agent state so they can respond to Accept/Reject
-        update_user_state(selected_agent, {
-            'step': 'agent_response',
-            'conversation_id': conversation_id,
-            'awaiting_agent_response': True
-        })
         
+        # Call human_agent to set up the agent handover
         return human_agent("", user_data, phone_id)
         
     except Exception as e:
@@ -1045,11 +1066,14 @@ def human_agent(prompt, user_data, phone_id):
 
         # Create a conversation ID
         conversation_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps({
+        conversation_data = {
             'customer': user_data['sender'],
             'agent': selected_agent,
             'active': False
-        }))
+        }
+        print(f"Creating conversation {conversation_id} with data: {conversation_data}")
+        redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps(conversation_data))
+        print(f"Conversation {conversation_id} saved to Redis")
 
         # Save customer state
         update_user_state(user_data['sender'], {
@@ -1060,11 +1084,20 @@ def human_agent(prompt, user_data, phone_id):
         })
 
         # Save agent state so they can respond to Accept/Reject
-        update_user_state(selected_agent, {
+        agent_state = {
             'step': 'agent_response',
             'conversation_id': conversation_id,
-            'awaiting_agent_response': True
-        })
+            'awaiting_agent_response': True,
+            'sender': selected_agent
+        }
+        print(f"Setting agent state for {selected_agent}: {agent_state}")
+        update_user_state(selected_agent, agent_state)
+        
+        # Also try to set state for normalized version
+        normalized_agent = normalize_phone_number(selected_agent)
+        if normalized_agent != selected_agent:
+            print(f"Also setting state for normalized agent number: {normalized_agent}")
+            update_user_state(normalized_agent, agent_state)
 
         # Notify customer
         send_message(
@@ -1104,19 +1137,32 @@ def human_agent(prompt, user_data, phone_id):
 def agent_response(prompt, user_data, phone_id):
     """Handles agent accept/reject and forwards chat messages."""
     try:
-        print("fae")
+        print(f"Agent response called with prompt: '{prompt}' and user_data: {user_data}")
+        
         # Handle accept/reject chat request
         if user_data.get('awaiting_agent_response'):
+            print(f"Agent is awaiting response, prompt: '{prompt}'")
+            print(f"User data keys: {list(user_data.keys())}")
+            print(f"Conversation ID: {user_data.get('conversation_id')}")
+            print(f"Agent phone: {user_data.get('sender')}")
             
-            if prompt == "accept_chat":
+            # Check for accept/reject buttons (both exact match and partial)
+            if prompt == "accept_chat" or "accept" in prompt.lower():
+                print("Processing accept chat request")
                 conversation_id = user_data.get('conversation_id')
+                print(f"Looking for conversation: {conversation_id}")
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
+                print(f"Conversation data raw: {conv_data_raw}")
                 if not conv_data_raw:
+                    print(f"❌ Conversation {conversation_id} not found in Redis")
+                    print(f"Available keys in Redis: {redis_client.keys('agent_conversation:*')}")
                     send_message("❌ Conversation not found or expired.", user_data['sender'], phone_id)
                     return {'step': 'agent_response'}
 
                 conv_data = json.loads(conv_data_raw)
+                print(f"Conversation data: {conv_data}")
                 customer_number = conv_data.get('customer')
+                print(f"Customer number: {customer_number}")
 
                 send_message(
                     "Agent has joined the conversation. You can now chat directly.\n"
@@ -1140,7 +1186,8 @@ def agent_response(prompt, user_data, phone_id):
                     'active_chat': True
                 }
 
-            elif prompt == "reject_chat":
+            elif prompt == "reject_chat" or "reject" in prompt.lower():
+                print("Processing reject chat request")
                 conversation_id = user_data.get('conversation_id')
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
                 if conv_data_raw:
@@ -1154,6 +1201,11 @@ def agent_response(prompt, user_data, phone_id):
                     )
                     redis_client.delete(f"agent_conversation:{conversation_id}")
                     return handle_welcome("", {'sender': customer_number}, phone_id)
+                return {'step': 'agent_response'}
+            else:
+                # If we reach here, the prompt didn't match accept or reject
+                print(f"Unexpected prompt in agent_response: '{prompt}'")
+                send_message("Invalid selection. Please choose 'Accept Chat' or 'Reject Chat'.", user_data['sender'], phone_id)
                 return {'step': 'agent_response'}
 
         # Handle active chat messages
@@ -1246,18 +1298,37 @@ def message_handler(prompt, sender, phone_id):
     text = prompt.strip().lower()
 
     # If the sender is an agent, set them to agent mode on first contact
-    if sender in AGENT_NUMBERS:
-        print("tttttttttttttttttttttttttttt")
+    normalized_sender = normalize_phone_number(sender)
+    print(f"Checking if {sender} (normalized: {normalized_sender}) is in AGENT_NUMBERS: {AGENT_NUMBERS}")
+    print(f"Sender type: {type(sender)}, AGENT_NUMBERS types: {[type(x) for x in AGENT_NUMBERS]}")
+    
+    if normalized_sender in AGENT_NUMBERS or sender in AGENT_NUMBERS:
+        print(f"Agent message received: '{prompt}' from {sender}")
+        print(f"AGENT_NUMBERS: {AGENT_NUMBERS}")
         state = get_user_state(sender)
+        print(f"Current agent state: {state}")
+        
+        # Also try to get state for normalized sender
         if state.get('step') != 'agent_response':
+            normalized_state = get_user_state(normalized_sender)
+            print(f"Normalized sender state: {normalized_state}")
+            if normalized_state.get('step') == 'agent_response':
+                state = normalized_state
+                print(f"Using normalized sender state: {state}")
+        
+        if state.get('step') != 'agent_response':
+            print(f"Updating agent state to agent_response")
             update_user_state(sender, {
                 'step': 'agent_response',
                 'sender': sender
             })
             state = get_user_state(sender)  # refresh after update
+            print(f"Updated agent state: {state}")
     
         # 🚀 Directly call the agent_response() function
+        print(f"Calling agent_response with prompt: '{prompt}' and state: {state}")
         updated_state = agent_response(prompt, state, phone_id)
+        print(f"Agent response returned: {updated_state}")
         update_user_state(sender, updated_state)
         return
 
@@ -1312,6 +1383,8 @@ def webhook():
                     sender = message.get("from")
                     if not sender:
                         continue
+                    
+                    print(f"Webhook received message from: {sender} (type: {type(sender)})")
 
                     # Handle different message types
                     if "text" in message:
@@ -1320,6 +1393,8 @@ def webhook():
                             message_handler(text, sender, phone_id)
                     elif "interactive" in message:
                         interactive = message["interactive"]
+                        print(f"Interactive message received: {interactive}")
+                        
                         # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
@@ -1333,10 +1408,14 @@ def webhook():
                             button_reply = interactive.get("button_reply", {})
                             button_id = button_reply.get("id")
                             button_title = button_reply.get("title", "").strip()
+                            
+                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}', Sender: {sender}")
+                            print(f"Full button_reply data: {button_reply}")
                         
                             # Pass Accept/Reject IDs directly
                             if button_id in ["accept_chat", "reject_chat"]:
                                 prompt = button_id
+                                print(f"Setting prompt to button_id: '{prompt}'")
                             elif button_id == "quote_btn":
                                 prompt = "Request Quote"
                             elif button_id == "back_btn":
@@ -1345,6 +1424,7 @@ def webhook():
                                 prompt = button_title
                         
                             if prompt:
+                                print(f"Calling message_handler with prompt: '{prompt}' for sender: {sender}")
                                 message_handler(prompt, sender, phone_id)
 
 
