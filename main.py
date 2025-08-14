@@ -1214,7 +1214,22 @@ def get_action(current_state, prompt, user_data, phone_id):
 def message_handler(prompt, sender, phone_id):
     text = prompt.strip().lower()
 
-    if text in ["hi", "hello", "hie",  "hey", "start"]:
+    # If the sender is an agent, set them to agent mode on first contact
+    if sender in AGENT_NUMBERS:
+        state = get_user_state(sender)
+        if state.get('step') != 'agent_response':
+            update_user_state(sender, {
+                'step': 'agent_response',
+                'sender': sender
+            })
+        # Continue handling as agent
+        step = 'agent_response'
+        updated_state = get_action(step, prompt, get_user_state(sender), phone_id)
+        update_user_state(sender, updated_state)
+        return
+
+    # Normal user handling
+    if text in ["hi", "hello", "hie", "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
@@ -1226,6 +1241,7 @@ def message_handler(prompt, sender, phone_id):
     step = user_state.get('step') or 'welcome'
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
+
 
 @app.route("/", methods=["GET"])
 def index():
