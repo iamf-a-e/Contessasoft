@@ -1253,6 +1253,30 @@ def webhook():
                     user_state = get_user_state(sender)
                     current_step = user_state.get('step', 'welcome')
 
+                    # Handle agent-specific states first
+                    if current_step in ['agent_pending', 'agent_chat', 'awaiting_agent']:
+                        # Check if this is an agent responding
+                        if sender in AGENT_NUMBERS:
+                            # Handle interactive responses from agent
+                            if "interactive" in message:
+                                interactive = message["interactive"]
+                                if interactive.get("type") == "list_reply":
+                                    list_reply = interactive.get("list_reply", {})
+                                    reply_title = list_reply.get("title", "").strip()
+                                    if reply_title:
+                                        message_handler(reply_title, sender, phone_id)
+                                elif interactive.get("type") == "button_reply":
+                                    button_reply = interactive.get("button_reply", {})
+                                    button_id = button_reply.get("id")
+                                    message_handler(button_id, sender, phone_id)
+                            # Handle text messages from agent
+                            elif "text" in message:
+                                text = message["text"].get("body", "").strip()
+                                if text:
+                                    message_handler(text, sender, phone_id)
+                            continue
+
+                    # Handle customer messages and non-agent states
                     # Handle message types
                     if "text" in message:
                         text = message["text"].get("body", "").strip()
@@ -1262,14 +1286,14 @@ def webhook():
                     elif "interactive" in message:
                         interactive = message["interactive"]
                         
-                        # Handle list replies (including agent handover)
+                        # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
                                 message_handler(reply_title, sender, phone_id)
                         
-                        # Handle button replies (for other parts of the system)
+                        # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
                             button_id = button_reply.get("id")
@@ -1283,12 +1307,25 @@ def webhook():
                             if prompt:
                                 message_handler(prompt, sender, phone_id)
 
+                    # Handle status updates for agent conversations
+                    if "statuses" in value:
+                        for status in value.get("statuses", []):
+                            conversation_id = user_state.get('conversation_id')
+                            if conversation_id:
+                                conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
+                                if conv_data:
+                                    conv_data = json.loads(conv_data)
+                                    if status.get("status") == "failed" and sender == conv_data.get('agent'):
+                                        # Notify customer if agent message failed
+                                        send_message("⚠️ Message could not be delivered to agent. Please try again later.", 
+                                                   conv_data.get('customer'), phone_id)
+
         except Exception as e:
             logging.error(f"Webhook error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-
+        
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
