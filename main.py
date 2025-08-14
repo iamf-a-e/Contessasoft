@@ -1272,10 +1272,6 @@ def webhook():
                     elif "interactive" in message:
                         interactive = message["interactive"]
                         
-                        # Initialize button_id as None
-                        button_id = None
-                        reply_title = None
-                        
                         # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
@@ -1286,27 +1282,22 @@ def webhook():
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
-                            button_id = button_reply.get("id")
+                            button_id = button_reply.get("id", "")
                             
                             # Special handling for agent buttons
-                            if button_id in ["accept_chat_btn", "reject_chat_btn"]:
-                                # Get the conversation from Redis to verify this is an agent
-                                conversations = redis_client.keys("agent_conversation:*")
-                                for conv_key in conversations:
-                                    conv_data = json.loads(redis_client.get(conv_key))
-                                    if conv_data.get("agent") == sender:
-                                        # This is an agent responding to a chat request
-                                        message_handler(interactive, sender, phone_id)
-                                        return jsonify({"status": "ok"}), 200
+                            if current_step in ['agent_pending', 'agent_chat', 'awaiting_agent']:
+                                message_handler(interactive, sender, phone_id)
+                                return jsonify({"status": "ok"}), 200
                             
-                            # Standard button handling for other cases
-                            if button_id == "quote_btn":
-                                prompt = "Request Quote"
-                            elif button_id == "back_btn":
-                                prompt = "Back to Services"
-                            else:
-                                prompt = button_id
-                        
+                            # Map button IDs to prompts
+                            button_mapping = {
+                                "quote_btn": "Request Quote",
+                                "back_btn": "Back to Services",
+                                "accept_chat_btn": "accept",
+                                "reject_chat_btn": "reject"
+                            }
+                            
+                            prompt = button_mapping.get(button_id, button_id)
                             if prompt:
                                 message_handler(prompt, sender, phone_id)
 
@@ -1315,7 +1306,7 @@ def webhook():
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-        
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
