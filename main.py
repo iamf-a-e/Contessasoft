@@ -28,6 +28,7 @@ redis_client = Redis(
 )
 
 selected_agent = random.choice(AGENT_NUMBERS)
+conversation_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
