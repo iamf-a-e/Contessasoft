@@ -1247,6 +1247,7 @@ def message_handler(prompt, sender, phone_id):
 
     # If the sender is an agent, set them to agent mode on first contact
     if sender in AGENT_NUMBERS:
+        print("tttttttttttttttttttttttttttt")
         state = get_user_state(sender)
         if state.get('step') != 'agent_response':
             update_user_state(sender, {
