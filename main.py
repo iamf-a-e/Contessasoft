@@ -1282,6 +1282,17 @@ def webhook():
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
+
+                            # Check for agent-specific buttons first
+                            if button_id in ["accept_chat_btn", "reject_chat_btn"]:
+                                # Get the conversation from Redis to verify this is an agent
+                                conversations = redis_client.keys("agent_conversation:*")
+                                for conv_key in conversations:
+                                    conv_data = json.loads(redis_client.get(conv_key))
+                                    if conv_data.get("agent") == sender:
+                                        # This is an agent responding to a chat request
+                                        message_handler(interactive, sender, phone_id)
+                                        return jsonify({"status": "ok"}), 200
                             
                             # Special handling for agent buttons
                            
