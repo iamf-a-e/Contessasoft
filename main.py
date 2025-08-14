@@ -1081,6 +1081,10 @@ def human_agent(prompt, user_data, phone_id):
 
 def agent_response(prompt, user_data, phone_id):
     try:
+        # Verify this is an agent
+        if sender not in AGENT_NUMBERS:
+            return handle_welcome("", user_data, phone_id)
+            
         conversation_id = user_data.get('conversation_id')
         if not conversation_id:
             return handle_welcome("", user_data, phone_id)
