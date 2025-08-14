@@ -1079,7 +1079,6 @@ def human_agent(prompt, user_data, phone_id):
         
 
 def agent_response(prompt, user_data, phone_id):
-    """Handles all agent interactions"""
     try:
         conversation_id = user_data.get('conversation_id')
         if not conversation_id:
@@ -1088,11 +1087,11 @@ def agent_response(prompt, user_data, phone_id):
         conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
         if not conv_data:
             return handle_welcome("", user_data, phone_id)
-            
+
         conv_data = json.loads(conv_data)
         customer_number = conv_data.get('customer')
 
-        # Check if this is a button response from the interactive message
+        # Normalize button clicks
         if isinstance(prompt, dict) and 'button_reply' in prompt:
             button_id = prompt['button_reply'].get('id')
             if button_id == "accept_chat_btn":
@@ -1100,13 +1099,11 @@ def agent_response(prompt, user_data, phone_id):
             elif button_id == "reject_chat_btn":
                 prompt = "reject"
 
-        # Handle agent responses (button or text)
+        # Handle Accept/Reject during pending state
         if user_data.get('awaiting_response'):
-            # Clear the response flag immediately
             update_user_state(user_data['sender'], {'awaiting_response': False})
 
-            if "accept" in prompt.lower() or "accept_chat_btn" in prompt or "✅" in prompt:
-                # Update conversation status
+            if "accept" in str(prompt).lower():
                 redis_client.setex(
                     f"agent_conversation:{conversation_id}",
                     3600,
@@ -1116,46 +1113,38 @@ def agent_response(prompt, user_data, phone_id):
                         'accepted_at': datetime.now().isoformat()
                     })
                 )
-
-                # Update states
                 update_user_state(user_data['sender'], {
                     'step': 'agent_chat',
                     'active_chat': True,
                     'conversation_id': conversation_id
                 })
-                
                 update_user_state(customer_number, {
                     'step': 'agent_chat',
                     'assigned_agent': user_data['sender'],
                     'conversation_id': conversation_id
                 })
-
-                # Notify both parties
                 send_message("✅ You are now connected to an agent!", customer_number, phone_id)
                 send_message(f"✅ Connected to customer: {customer_number}", user_data['sender'], phone_id)
-                
                 return {'step': 'agent_chat'}
-                
-            elif "reject" in prompt.lower() or "reject_chat_btn" in prompt or "❌" in prompt:
+
+            elif "reject" in str(prompt).lower():
                 send_message("❌ Agent is unavailable. Please try again later.", customer_number, phone_id)
                 redis_client.delete(f"agent_conversation:{conversation_id}")
                 return handle_welcome("", {'sender': customer_number}, phone_id)
 
         # Handle active chat messages
-        elif conv_data.get('status') == 'active':
-            if "exit" in prompt.lower():
-                # End conversation
+        if conv_data.get('status') == 'active':
+            if "exit" in str(prompt).lower():
                 send_message("🗣️ Conversation ended. Type 'menu' for options.", customer_number, phone_id)
                 send_message("🗣️ You ended the conversation.", user_data['sender'], phone_id)
                 redis_client.delete(f"agent_conversation:{conversation_id}")
                 return {'step': 'welcome'}
 
-            # Forward messages
             if user_data['sender'] == conv_data['agent']:
                 send_message(f"👨‍💼 Agent: {prompt}", customer_number, phone_id)
             else:
                 send_message(f"👤 Customer: {prompt}", conv_data['agent'], phone_id)
-            
+
             return user_data
 
         return {'step': 'welcome'}
@@ -1164,7 +1153,8 @@ def agent_response(prompt, user_data, phone_id):
         logging.error(f"Agent response error: {str(e)}")
         send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-        
+
+
 
 # Action mapping
 action_mapping = {
@@ -1192,13 +1182,25 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    # Handle interactive messages (button clicks)
+    # Special handling: agent handover states
+    user_state = get_user_state(sender)
+    step = user_state.get('step', 'welcome')
+
+    if step in ['agent_pending', 'agent_chat', 'awaiting_agent'] and isinstance(prompt, dict) and 'button_reply' in prompt:
+        updated_state = get_action(step, prompt, user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
+
+    # Handle interactive messages (non-agent)
     if isinstance(prompt, dict) and 'interactive' in prompt:
         interactive = prompt['interactive']
         if interactive.get('type') == 'button_reply':
             button_reply = interactive.get('button_reply', {})
             prompt = button_reply.get('id', '')
-    
+        elif interactive.get('type') == 'list_reply':
+            list_reply = interactive.get('list_reply', {})
+            prompt = list_reply.get('title', '')
+
     text = prompt.strip().lower() if isinstance(prompt, str) else str(prompt).lower()
 
     if text in ["hi", "hello", "hie", "hey", "start"]:
@@ -1207,13 +1209,11 @@ def message_handler(prompt, sender, phone_id):
         update_user_state(sender, updated_state)
         return
 
-    user_state = get_user_state(sender)
     user_state['sender'] = sender
-
-    step = user_state.get('step') or 'welcome'
     updated_state = get_action(step, prompt, user_state, phone_id)
     update_user_state(sender, updated_state)
-    
+
+
 
 @app.route("/", methods=["GET"])
 def index():
@@ -1277,9 +1277,10 @@ def webhook():
                             button_reply = interactive.get("button_reply", {})
                             
                             # Special handling for agent buttons
+                           
                             if current_step in ['agent_pending', 'agent_chat', 'awaiting_agent']:
-                                # Pass the entire interactive object for proper handling
-                                message_handler(interactive, sender, phone_id) 
+                                # Pass raw interactive payload for proper agent handling
+                                message_handler(interactive, sender, phone_id)
                             else:
                                 # Standard button handling for other cases
                                 button_id = button_reply.get("id")
@@ -1289,9 +1290,10 @@ def webhook():
                                     prompt = "Back to Services"
                                 else:
                                     prompt = button_id
-                                
+                            
                                 if prompt:
                                     message_handler(prompt, sender, phone_id)
+
 
         except Exception as e:
             logging.error(f"Webhook error: {str(e)}\n{traceback.format_exc()}")
