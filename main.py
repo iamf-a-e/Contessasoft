@@ -917,7 +917,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             f"🆘 *New Support Request* ({user.support_type.value})\n\n"
             f"👤 From: {user.name} ({user.phone})\n"
             f"📝 Details: {prompt}"
-        )
+        ),
         send_message(admin_msg, owner_phone, phone_id)
         
         send_message(
@@ -1075,7 +1075,7 @@ def human_agent(prompt, user_data, phone_id):
             selected_agent,
             phone_id
         )
-
+        print("*******************************")
         return {
             'step': 'agent_response',
             'assigned_agent': selected_agent,
@@ -1095,7 +1095,7 @@ def agent_response(prompt, user_data, phone_id):
         # Handle accept/reject chat request
         if user_data.get('awaiting_agent_response'):
             one = "one"
-            if one == "one":
+            if prompt == "accept_chat":
                 conversation_id = user_data.get('conversation_id')
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
                 if not conv_data_raw:
@@ -1127,21 +1127,21 @@ def agent_response(prompt, user_data, phone_id):
                     'active_chat': True
                 }
 
-            # elif prompt == "reject_chat":
-            #     conversation_id = user_data.get('conversation_id')
-            #     conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
-            #     if conv_data_raw:
-            #         conv_data = json.loads(conv_data_raw)
-            #         customer_number = conv_data.get('customer')
-            #         send_message(
-            #             "Sorry, the agent is unable to take your chat at this time. "
-            #             "Please try again later or leave a message.",
-            #             customer_number,
-            #             phone_id
-            #         )
-            #         redis_client.delete(f"agent_conversation:{conversation_id}")
-            #         return handle_welcome("", {'sender': customer_number}, phone_id)
-            #     return {'step': 'agent_response'}
+            elif prompt == "reject_chat":
+                conversation_id = user_data.get('conversation_id')
+                conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
+                if conv_data_raw:
+                    conv_data = json.loads(conv_data_raw)
+                    customer_number = conv_data.get('customer')
+                    send_message(
+                        "Sorry, the agent is unable to take your chat at this time. "
+                        "Please try again later or leave a message.",
+                        customer_number,
+                        phone_id
+                    )
+                    redis_client.delete(f"agent_conversation:{conversation_id}")
+                    return handle_welcome("", {'sender': customer_number}, phone_id)
+                return {'step': 'agent_response'}
 
         # Handle active chat messages
         conversation_id = user_data.get('conversation_id')
