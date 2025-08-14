@@ -1186,10 +1186,14 @@ def message_handler(prompt, sender, phone_id):
     user_state = get_user_state(sender)
     step = user_state.get('step', 'welcome')
 
-    if step in ['agent_pending', 'agent_chat', 'awaiting_agent'] and isinstance(prompt, dict) and 'button_reply' in prompt:
+    if step in ['agent_pending', 'agent_chat', 'awaiting_agent'] \
+       and isinstance(prompt, dict) \
+       and prompt.get('type') == 'button_reply' \
+       and 'button_reply' in prompt:
         updated_state = get_action(step, prompt, user_state, phone_id)
         update_user_state(sender, updated_state)
         return
+
 
     # Handle interactive messages (non-agent)
     if isinstance(prompt, dict) and 'interactive' in prompt:
