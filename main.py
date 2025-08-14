@@ -1227,9 +1227,10 @@ def message_handler(prompt, sender, phone_id):
                 'step': 'agent_response',
                 'sender': sender
             })
-        # Continue handling as agent
-        step = 'agent_response'
-        updated_state = get_action(step, prompt, get_user_state(sender), phone_id)
+            state = get_user_state(sender)  # refresh after update
+    
+        # 🚀 Directly call the agent_response() function
+        updated_state = agent_response(prompt, state, phone_id)
         update_user_state(sender, updated_state)
         return
 
