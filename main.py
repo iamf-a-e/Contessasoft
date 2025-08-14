@@ -1,14 +1,14 @@
 import os
 import logging
 import requests
-import random 
+import random
 import string
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template
-import json 
+import json
 import traceback
 from enum import Enum
-from upstash_redis import Redis 
+from upstash_redis import Redis
 import redis
 
 app = Flask(__name__)
@@ -948,7 +948,7 @@ def handle_quote_followup(prompt, user_data, phone_id):
             )
             
             # Notify admin about callback request
-            admin_msg = f"📞 Callback requested by {user.name} ({user.phone}) for quote #{user.project_description[:10]}..."
+            admin_msg = f"📞 Callback requested by {user.name} - {user.phone} for quote #{user.project_description[:10]}..."
             send_message(admin_msg, owner_phone, phone_id)
             
         elif selected_option == QuoteOptions.NO_CALLBACK:
@@ -1034,8 +1034,8 @@ def handle_get_support_details(prompt, user_data, phone_id):
         
         # Send support request to admin
         admin_msg = (
-            f"🆘 *New Support Request* ({user.support_type.value})\n\n"
-            f"👤 From: {user.name} ({user.phone})\n"
+            f"🆘 *New Support Request* - {user.support_type.value}\n\n"
+            f"👤 From: {user.name} - {user.phone}\n"
             f"📝 Details: {prompt}"
         )
         send_message(admin_msg, owner_phone, phone_id)
@@ -1205,7 +1205,7 @@ def human_agent(prompt, user_data, phone_id):
         
         button_sent = send_button_message(
             f"New Chat Request\n\n"
-            f"From: {user_data.get('name', 'Customer')} ({user_data['sender']})\n"
+            f"From: {user_data.get('name', 'Customer')} - {user_data['sender']}\n"
             f"Conversation ID: {conversation_id}",
             [
                 {"id": "accept_chat", "title": "Accept Chat"},
@@ -1220,7 +1220,7 @@ def human_agent(prompt, user_data, phone_id):
             # Fallback to simple text message
             send_message(
                 f"New Chat Request\n\n"
-                f"From: {user_data.get('name', 'Customer')} ({user_data['sender'])}\n"
+                f"From: {user_data.get('name', 'Customer')} - {user_data['sender']}\n"
                 f"Conversation ID: {conversation_id}\n\n"
                 f"Reply with 'accept' to accept or 'reject' to reject.",
                 selected_agent,
