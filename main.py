@@ -1018,140 +1018,170 @@ def handle_get_callback_details(prompt, user_data, phone_id):
 
 
 def human_agent(prompt, user_data, phone_id):
-    """Initiates handover to human agent using list message"""
+    """Handles the handover process to a human agent"""
     try:
         if not AGENT_NUMBERS:
-            send_message("No agents available. Please try later.", user_data['sender'], phone_id)
-            return {'step': 'welcome'}
-
-        # Create conversation ID with timestamp
-        conversation_id = f"conv_{int(datetime.now().timestamp())}"
+            send_message(
+                "Sorry, no agents are currently available. Please try again later.",
+                user_data['sender'],
+                phone_id
+            )
+            return handle_welcome("", user_data, phone_id)
+        
         selected_agent = random.choice(AGENT_NUMBERS)
         
-        # Store conversation in Redis
-        redis_client.setex(
-            f"agent_conversation:{conversation_id}",
-            3600,  # 1 hour expiration
-            json.dumps({
-                'customer': user_data['sender'],
-                'agent': selected_agent,
-                'status': 'pending',
-                'created_at': datetime.now().isoformat()
-            })
-        )
-
-        # Update customer state
         update_user_state(user_data['sender'], {
-            'step': 'awaiting_agent',
-            'conversation_id': conversation_id
+            'step': 'human_agent',
+            'assigned_agent': selected_agent,
+            'agent_handover': True
         })
-
-        # Prepare list options for agent
-        options = [
-            "✅ Accept Chat",
-            "❌ Decline Chat"
-        ]
-
-        # Send list message to agent
-        send_list_message(
-            f"📲 New Chat Request\nFrom: {user_data['sender']}\n"
+        
+        conversation_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps({
+            'customer': user_data['sender'],
+            'agent': selected_agent,
+            'active': True
+        }))
+        
+        send_message(
+            f"🚀 Connecting you to an agent...\n\n"
+            f"Your conversation ID: {conversation_id}\n"
+            "Please wait for the agent to accept your request.",
+            user_data['sender'],
+            phone_id
+        )
+        
+        # Message to agent with 1 / 2 instructions
+        send_message(
+            f"📲 New Chat Request\n\n"
+            f"From: {user_data.get('name', 'Customer')} ({user_data['sender']})\n"
             f"Conversation ID: {conversation_id}\n\n"
-            "Please select an action:",
-            options,
+            "Reply with:\n1 - Accept chat\n2 - Reject chat",
             selected_agent,
             phone_id
         )
-
-        # Update agent state
-        update_user_state(selected_agent, {
-            'step': 'agent_pending',
-            'conversation_id': conversation_id,
-            'customer_number': user_data['sender'],
-            'awaiting_response': True
-        })
-
-        send_message("Connecting you to an agent...", user_data['sender'], phone_id)
-        return {'step': 'awaiting_agent'}
-
-    except Exception as e:
-        logging.error(f"human_agent error: {str(e)}")
-        send_message("Connection failed. Returning to menu.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
         
+        return {
+            'step': 'human_agent',
+            'assigned_agent': selected_agent,
+            'conversation_id': conversation_id,
+            'awaiting_agent_response': True
+        }
+        
+    except Exception as e:
+        logging.error(f"Error in human_agent: {e}")
+        send_message("An error occurred during agent transfer. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+
 
 def agent_response(prompt, user_data, phone_id):
+    """Handles agent responses and message forwarding"""
     try:
-        conversation_id = user_data.get('conversation_id')
-        if not conversation_id:
-            return handle_welcome("", user_data, phone_id)
+        clean_prompt = prompt.strip().lower()
 
-        conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
-        if not conv_data:
-            return handle_welcome("", user_data, phone_id)
-
-        conv_data = json.loads(conv_data)
-        customer_number = conv_data.get('customer')
-
-        # Normalize list selections
-        if isinstance(prompt, str):
-            if "accept" in prompt.lower() or "✅" in prompt:
-                prompt = "accept"
-            elif "decline" in prompt.lower() or "❌" in prompt:
-                prompt = "reject"
-
-        # Handle Accept/Reject during pending state
-        if user_data.get('awaiting_response'):
-            update_user_state(user_data['sender'], {'awaiting_response': False})
-
-            if prompt == "accept":
-                redis_client.setex(
-                    f"agent_conversation:{conversation_id}",
-                    3600,
-                    json.dumps({
-                        **conv_data,
-                        'status': 'active',
-                        'accepted_at': datetime.now().isoformat()
-                    })
+        # Waiting for agent accept/reject
+        if user_data.get('awaiting_agent_response'):
+            if clean_prompt in ["1", "accept", "✅"]:
+                conversation_id = user_data.get('conversation_id')
+                conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
+                if conv_data:
+                    conv_data = json.loads(conv_data)
+                    customer_number = conv_data.get('customer')
+                else:
+                    return user_data
+                
+                send_message(
+                    "Agent has joined the conversation. You can now chat directly.\n"
+                    "Type 'exit' or '2' at any time to end the conversation.",
+                    customer_number,
+                    phone_id
                 )
-                update_user_state(user_data['sender'], {
-                    'step': 'agent_chat',
-                    'active_chat': True,
-                    'conversation_id': conversation_id
-                })
-                update_user_state(customer_number, {
-                    'step': 'agent_chat',
-                    'assigned_agent': user_data['sender'],
-                    'conversation_id': conversation_id
-                })
-                send_message("✅ You are now connected to an agent!", customer_number, phone_id)
-                send_message(f"✅ Connected to customer: {customer_number}", user_data['sender'], phone_id)
-                return {'step': 'agent_chat'}
-
-            elif prompt == "reject":
-                send_message("❌ Agent is unavailable. Please try again later.", customer_number, phone_id)
+                send_message(
+                    "You've accepted the chat. You're now connected to the customer.\n"
+                    "Type 'exit' or '2' to end the conversation and return to the bot.",
+                    user_data['sender'],
+                    phone_id
+                )
+                
+                redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps({
+                    'customer': customer_number,
+                    'agent': user_data['sender'],
+                    'active': True
+                }))
+                
+                return {
+                    'step': 'agent_response',
+                    'conversation_id': conversation_id,
+                    'active_chat': True
+                }
+                
+            elif clean_prompt in ["2", "reject", "❌"]:
+                conversation_id = user_data.get('conversation_id')
+                conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
+                if conv_data:
+                    conv_data = json.loads(conv_data)
+                    customer_number = conv_data.get('customer')
+                else:
+                    return user_data
+                
+                send_message(
+                    "Sorry, the agent is unable to take your chat at this time. "
+                    "Please try again later or leave a message.",
+                    customer_number,
+                    phone_id
+                )
                 redis_client.delete(f"agent_conversation:{conversation_id}")
                 return handle_welcome("", {'sender': customer_number}, phone_id)
 
-        # Handle active chat messages
-        if conv_data.get('status') == 'active':
-            if "exit" in str(prompt).lower():
-                send_message("🗣️ Conversation ended. Type 'menu' for options.", customer_number, phone_id)
-                send_message("🗣️ You ended the conversation.", user_data['sender'], phone_id)
-                redis_client.delete(f"agent_conversation:{conversation_id}")
-                return {'step': 'welcome'}
-
-            if user_data['sender'] == conv_data['agent']:
-                send_message(f"👨‍💼 Agent: {prompt}", customer_number, phone_id)
-            else:
-                send_message(f"👤 Customer: {prompt}", conv_data['agent'], phone_id)
-
-            return user_data
-
-        return {'step': 'welcome'}
-
+        # Active chat mode
+        conversation_id = user_data.get('conversation_id')
+        if conversation_id:
+            conv_data = redis_client.get(f"agent_conversation:{conversation_id}")
+            if conv_data:
+                conv_data = json.loads(conv_data)
+                
+                # End chat if agent or customer sends "exit" or "2"
+                if clean_prompt in ["exit", "2"]:
+                    if user_data['sender'] == conv_data['agent']:
+                        send_message(
+                            "You've ended the conversation. The customer will return to the bot.",
+                            conv_data['agent'],
+                            phone_id
+                        )
+                        send_message(
+                            "The agent has ended the conversation. You're now back with the bot.",
+                            conv_data['customer'],
+                            phone_id
+                        )
+                    else:
+                        send_message(
+                            "You've ended the conversation with the agent. You're now back with the bot.",
+                            conv_data['customer'],
+                            phone_id
+                        )
+                        send_message(
+                            "The customer has ended the conversation.",
+                            conv_data['agent'],
+                            phone_id
+                        )
+                    
+                    redis_client.delete(f"agent_conversation:{conversation_id}")
+                    return handle_welcome("", {'sender': conv_data['customer']}, phone_id)
+                
+                # Forward message
+                if user_data['sender'] == conv_data['agent']:
+                    send_message(f"👨‍💼 Agent: {prompt}", conv_data['customer'], phone_id)
+                else:
+                    send_message(f"👤 Customer: {prompt}", conv_data['agent'], phone_id)
+                
+                return user_data
+        
+        return handle_welcome("", user_data, phone_id)
+        
     except Exception as e:
-        logging.error(f"Agent response error: {str(e)}")
-        send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
+        logging.error(f"Error in agent_response: {e}")
+        send_message("An error occurred in agent communication. Returning to main menu.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
 
