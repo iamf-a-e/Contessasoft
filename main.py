@@ -127,6 +127,8 @@ def get_user_state(phone_number):
     return {'step': 'welcome', 'sender': phone_number}
 
 def update_user_state(phone_number, updates):
+    print("#########################")
+    print(updates)
     current = get_user_state(phone_number)
     current.update(updates)
     current['phone_number'] = phone_number
