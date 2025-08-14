@@ -1162,6 +1162,10 @@ def human_agent(prompt, user_data, phone_id):
         print(f"Creating conversation {conversation_id} with data: {conversation_data}")
         redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps(conversation_data))
         print(f"Conversation {conversation_id} saved to Redis")
+        
+        # Verify conversation was saved
+        saved_conv = redis_client.get(f"agent_conversation:{conversation_id}")
+        print(f"Verified saved conversation: {saved_conv}")
 
         # Save customer state
         update_user_state(user_data['sender'], {
@@ -1286,6 +1290,16 @@ def agent_response(prompt, user_data, phone_id):
                 conv_data['active'] = True
                 redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps(conv_data))
 
+                # Update customer state to indicate they're in an active agent chat
+                customer_state = {
+                    'step': 'agent_response',
+                    'conversation_id': conversation_id,
+                    'active_chat': True,
+                    'sender': customer_number
+                }
+                print(f"Setting customer {customer_number} state to: {customer_state}")
+                update_user_state(customer_number, customer_state)
+
                 return {
                     'step': 'agent_response',
                     'conversation_id': conversation_id,
@@ -1316,14 +1330,19 @@ def agent_response(prompt, user_data, phone_id):
 
         # Handle active chat messages
         conversation_id = user_data.get('conversation_id')
+        print(f"Checking for active chat with conversation_id: {conversation_id}")
         if conversation_id:
             conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
             if conv_data_raw:
                 conv_data = json.loads(conv_data_raw)
+                print(f"Found conversation data: {conv_data}")
+                print(f"Current sender: {user_data['sender']}, Agent: {conv_data['agent']}, Customer: {conv_data['customer']}")
 
                 # Exit command ends chat
                 if prompt.lower() == "exit":
+                    print(f"Exit command received from {user_data['sender']}")
                     if user_data['sender'] == conv_data['agent']:
+                        print(f"Agent {user_data['sender']} ending conversation")
                         send_message(
                             "You’ve ended the conversation. The customer will now return to the bot.",
                             conv_data['agent'],
@@ -1335,6 +1354,7 @@ def agent_response(prompt, user_data, phone_id):
                             phone_id
                         )
                     else:
+                        print(f"Customer {user_data['sender']} ending conversation")
                         send_message(
                             "You’ve ended the conversation with the agent. You’re now back with the bot.",
                             conv_data['customer'],
@@ -1345,17 +1365,40 @@ def agent_response(prompt, user_data, phone_id):
                             conv_data['agent'],
                             phone_id
                         )
+                        
+                        # Reset agent state
+                        agent_state = {'step': 'agent_response', 'sender': conv_data['agent']}
+                        print(f"Resetting agent {conv_data['agent']} state to: {agent_state}")
+                        update_user_state(conv_data['agent'], agent_state)
 
+                    # Reset customer state to welcome
+                    customer_welcome_state = {'step': 'welcome', 'sender': conv_data['customer']}
+                    print(f"Resetting customer {conv_data['customer']} state to: {customer_welcome_state}")
+                    update_user_state(conv_data['customer'], customer_welcome_state)
+                    
+                    # Delete conversation and return to welcome
+                    print(f"Deleting conversation {conversation_id}")
                     redis_client.delete(f"agent_conversation:{conversation_id}")
                     return handle_welcome("", {'sender': conv_data['customer']}, phone_id)
 
-                # Forward messages
+                # Forward messages between agent and customer
                 if user_data['sender'] == conv_data['agent']:
+                    # Agent message to customer
+                    print(f"Agent {user_data['sender']} sending message to customer {conv_data['customer']}: {prompt}")
                     send_message(f"👨‍💼 Agent: {prompt}", conv_data['customer'], phone_id)
+                    print(f"✅ Forwarded agent message to customer: {conv_data['customer']}")
                 else:
+                    # Customer message to agent
+                    print(f"Customer {user_data['sender']} sending message to agent {conv_data['agent']}: {prompt}")
                     send_message(f"👤 Customer: {prompt}", conv_data['agent'], phone_id)
+                    print(f"✅ Forwarded customer message to agent: {conv_data['agent']}")
 
-                return user_data
+                # Return current state to maintain conversation
+                return {
+                    'step': 'agent_response',
+                    'conversation_id': conversation_id,
+                    'active_chat': True
+                }
 
         return handle_welcome("", user_data, phone_id)
 
@@ -1438,15 +1481,25 @@ def message_handler(prompt, sender, phone_id):
         update_user_state(sender, updated_state)
         return
 
+    # Check if user is in an active agent conversation
+    user_state = get_user_state(sender)
+    user_state['sender'] = sender
+    
+    print(f"User {sender} state: {user_state}")
+    
+    # If user is in agent_response state with active_chat, route to agent_response
+    if user_state.get('step') == 'agent_response' and user_state.get('active_chat'):
+        print(f"User {sender} is in active agent chat, routing to agent_response")
+        updated_state = agent_response(prompt, user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
+    
     # Normal user handling
     if text in ["hi", "hello", "hie", "hey", "start"]:
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
         return
-
-    user_state = get_user_state(sender)
-    user_state['sender'] = sender
 
     step = user_state.get('step') or 'welcome'
     updated_state = get_action(step, prompt, user_state, phone_id)
