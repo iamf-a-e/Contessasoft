@@ -4,7 +4,7 @@ import requests
 import random
 import string
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template 
+from flask import Flask, request, jsonify, render_template
 import json
 import traceback
 from enum import Enum
