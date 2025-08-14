@@ -1104,9 +1104,10 @@ def human_agent(prompt, user_data, phone_id):
 def agent_response(prompt, user_data, phone_id):
     """Handles agent accept/reject and forwards chat messages."""
     try:
+        print("fae")
         # Handle accept/reject chat request
         if user_data.get('awaiting_agent_response'):
-            one = "one"
+            
             if prompt == "accept_chat":
                 conversation_id = user_data.get('conversation_id')
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
