@@ -206,18 +206,81 @@ def send_button_message(text, buttons, recipient, phone_id):
         'Content-Type': 'application/json'
     }
     
+    # Validate recipient phone number
+    if not recipient or not recipient.strip():
+        print(f"Invalid recipient: {recipient}")
+        return False
+    
+    # Ensure recipient is in international format
+    original_recipient = recipient
+    if recipient.startswith('0'):
+        recipient = '+263' + recipient[1:]
+    elif not recipient.startswith('+'):
+        recipient = '+' + recipient
+    
+    print(f"Original recipient: {original_recipient}")
+    print(f"Normalized recipient: {recipient}")
+    
+    # Try different phone number formats if the first one fails
+    phone_formats = [recipient]
+    if recipient.startswith('+263'):
+        phone_formats.append(recipient[1:])  # Remove +
+        phone_formats.append('0' + recipient[4:])  # Local format
+    elif recipient.startswith('263'):
+        phone_formats.append('+' + recipient)
+        phone_formats.append('0' + recipient[3:])  # Local format
+    
+    print(f"Phone formats to try: {phone_formats}")
+    
+    # Try the first format first
+    recipient = phone_formats[0]
+    
+    # WhatsApp button message format
     button_items = []
-    for button in buttons[:3]:  # WhatsApp allows max 3 buttons
+    for i, button in enumerate(buttons[:3]):  # WhatsApp allows max 3 buttons
+        button_id = button.get("id", f"button_{i+1}")
+        button_title = button.get("title", "Button")
+        
+        # Ensure button title is within WhatsApp limits
+        if len(button_title) > 20:
+            button_title = button_title[:17] + "..."
+        
+        # Ensure button ID is valid
+        if not button_id or len(button_id) > 256:
+            button_id = f"button_{i+1}"
+        
         button_items.append({
             "type": "reply",
             "reply": {
-                "id": button.get("id", f"button_{len(button_items)+1}"),
-                "title": button.get("title", "Button")
+                "id": button_id,
+                "title": button_title
             }
         })
+        
+        print(f"Button {i+1}: id='{button_id}', title='{button_title}'")
+    
+    if not button_items:
+        print("No valid buttons found, falling back to text message")
+        fallback_text = f"{text}\n\n" + "\n".join(f"- {btn.get('title', 'Option')}" for btn in buttons[:3])
+        send_message(fallback_text, recipient, phone_id)
+        return False
+    
+    # Ensure text is within WhatsApp limits and clean it
+    if len(text) > 1024:
+        text = text[:1021] + "..."
+    
+    # Clean text of any problematic characters
+    text = text.replace('\x00', '').replace('\r', '\n').strip()
+    
+    # Ensure text is not empty
+    if not text:
+        text = "New message"
+    
+    print(f"Final text to send: '{text}' (length: {len(text)})")
     
     data = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": recipient,
         "type": "interactive",
         "interactive": {
@@ -231,11 +294,36 @@ def send_button_message(text, buttons, recipient, phone_id):
         }
     }
     
+    print(f"Final data to send: {json.dumps(data, indent=2)}")
+    
     try:
+        print(f"Sending button message to {recipient}: {data}")
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
+        print(f"Button message sent successfully to {recipient}")
+        return True
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send button message: {e}")
+        print(f"Button message failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response status: {e.response.status_code}")
+            print(f"Response text: {e.response.text}")
+            print(f"Response headers: {dict(e.response.headers)}")
+            
+            # Try to parse the error response
+            try:
+                error_data = e.response.json()
+                print(f"Error details: {error_data}")
+                if 'error' in error_data:
+                    print(f"Error message: {error_data['error'].get('message', 'Unknown error')}")
+                    print(f"Error code: {error_data['error'].get('code', 'Unknown code')}")
+            except:
+                print("Could not parse error response as JSON")
+        
+        # Fallback to simple text message
+        fallback_text = f"{text}\n\n" + "\n".join(f"- {btn.get('title', 'Option')}" for btn in buttons[:3])
+        send_message(fallback_text, recipient, phone_id)
+        return False
 
 
 def send_list_message(text, options, recipient, phone_id):
@@ -1109,17 +1197,35 @@ def human_agent(prompt, user_data, phone_id):
         )
 
         # Ask agent to accept/reject
-        send_button_message(
-            f"📲 New Chat Request\n\n"
+        print(f"Sending button message to agent: {selected_agent}")
+        print(f"Agent number type: {type(selected_agent)}")
+        print(f"Phone ID: {phone_id}")
+        print(f"Agent number in AGENT_NUMBERS: {selected_agent in AGENT_NUMBERS}")
+        print(f"All AGENT_NUMBERS: {AGENT_NUMBERS}")
+        
+        button_sent = send_button_message(
+            f"New Chat Request\n\n"
             f"From: {user_data.get('name', 'Customer')} ({user_data['sender']})\n"
             f"Conversation ID: {conversation_id}",
             [
-                {"id": "accept_chat", "title": "✅ Accept Chat"},
-                {"id": "reject_chat", "title": "❌ Reject Chat"}
+                {"id": "accept_chat", "title": "Accept Chat"},
+                {"id": "reject_chat", "title": "Reject Chat"}
             ],
             selected_agent,
             phone_id
         )
+        
+        if not button_sent:
+            print(f"Failed to send button message to agent {selected_agent}")
+            # Fallback to simple text message
+            send_message(
+                f"New Chat Request\n\n"
+                f"From: {user_data.get('name', 'Customer')} ({user_data['sender'])}\n"
+                f"Conversation ID: {conversation_id}\n\n"
+                f"Reply with 'accept' to accept or 'reject' to reject.",
+                selected_agent,
+                phone_id
+            )
         print("*******************************")
         return {
             'step': 'agent_response',
