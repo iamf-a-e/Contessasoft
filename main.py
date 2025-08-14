@@ -929,6 +929,12 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
         
+        # Save agent state so they can respond to Accept/Reject
+        update_user_state(selected_agent, {
+            'step': 'agent_response',
+            'conversation_id': conversation_id,
+            'awaiting_agent_response': True
+        })
         return human_agent("", user_data, phone_id)
         
     except Exception as e:
