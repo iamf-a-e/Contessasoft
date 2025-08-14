@@ -1177,8 +1177,10 @@ action_mapping = {
 }
 
 def get_action(current_state, prompt, user_data, phone_id):
+    logging.info(f"DEBUG: get_action called with state={current_state}, prompt={prompt}")
     handler = action_mapping.get(current_state, handle_welcome)
     return handler(prompt, user_data, phone_id)
+
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
