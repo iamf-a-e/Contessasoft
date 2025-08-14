@@ -1182,20 +1182,16 @@ def get_action(current_state, prompt, user_data, phone_id):
 
 # Message handler
 def message_handler(prompt, sender, phone_id):
-    # Special handling: agent handover states
     user_state = get_user_state(sender)
     step = user_state.get('step', 'welcome')
 
-    if step in ['agent_pending', 'agent_chat', 'awaiting_agent'] \
-       and isinstance(prompt, dict) \
-       and prompt.get('type') == 'button_reply' \
-       and 'button_reply' in prompt:
+    # ✅ Special case for agent handover
+    if step in ['agent_pending', 'agent_chat', 'awaiting_agent'] and isinstance(prompt, dict) and prompt.get('type') == 'button_reply':
         updated_state = get_action(step, prompt, user_state, phone_id)
         update_user_state(sender, updated_state)
         return
 
-
-    # Handle interactive messages (non-agent)
+    # Normal interactive parsing for other users
     if isinstance(prompt, dict) and 'interactive' in prompt:
         interactive = prompt['interactive']
         if interactive.get('type') == 'button_reply':
