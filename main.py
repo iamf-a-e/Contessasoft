@@ -929,6 +929,7 @@ def handle_get_support_details(prompt, user_data, phone_id):
             phone_id
         )
         
+        selected_agent = random.choice(AGENT_NUMBERS)
         # Save agent state so they can respond to Accept/Reject
         update_user_state(selected_agent, {
             'step': 'agent_response',
