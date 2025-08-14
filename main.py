@@ -1279,7 +1279,7 @@ def webhook():
                             # Special handling for agent buttons
                             if current_step in ['agent_pending', 'agent_chat', 'awaiting_agent']:
                                 # Pass the entire interactive object for proper handling
-                                message_handler(interactive, user_state, phone_id)
+                                message_handler(interactive, sender, phone_id) 
                             else:
                                 # Standard button handling for other cases
                                 button_id = button_reply.get("id")
