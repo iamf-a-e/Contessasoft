@@ -302,7 +302,7 @@ def handle_main_menu(prompt, user_data, phone_id):
                 break
                 
         if not selected_option:
-            send_message("Invalid selection. Please choose an option from the list.", user_data['sender'], phone_id)
+            send_message("Fae selection. Please choose an option from the list.", user_data['sender'], phone_id)
             return {'step': 'main_menu'}
         
         if selected_option == MainMenuOptions.ABOUT:
