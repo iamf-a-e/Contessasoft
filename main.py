@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["263785019494"]
+AGENT_NUMBERS = ["+263785019494"]
 
 # Redis client setup
 redis_client = Redis(
@@ -1147,7 +1147,7 @@ def human_agent(prompt, user_data, phone_id):
                 user_data['sender'],
                 phone_id
             )
-            return handle_welcome("", user_data, phone_id)
+            return {'step': 'welcome', 'sender': user_data['sender']}
 
         # Pick a random agent
         selected_agent = random.choice(AGENT_NUMBERS)
@@ -1167,7 +1167,7 @@ def human_agent(prompt, user_data, phone_id):
         saved_conv = redis_client.get(f"agent_conversation:{conversation_id}")
         print(f"Verified saved conversation: {saved_conv}")
 
-        # Save customer state
+        # Save customer state - NO welcome message will be sent
         customer_state = {
             'step': 'agent_response',
             'assigned_agent': selected_agent,
@@ -1198,7 +1198,7 @@ def human_agent(prompt, user_data, phone_id):
             print(f"Also setting state for normalized agent number: {normalized_agent}")
             update_user_state(normalized_agent, agent_state)
 
-        # Notify customer
+        # Notify customer about the handover process
         send_message(
             f"🚀 *Connecting to Agent...*\n\n"
             f"Your conversation ID: {conversation_id}\n"
@@ -1252,7 +1252,7 @@ def human_agent(prompt, user_data, phone_id):
     except Exception as e:
         logging.error(f"Error in human_agent: {e}")
         send_message("An error occurred during agent transfer. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
+        return {'step': 'welcome', 'sender': user_data['sender']}
 
 
 def agent_response(prompt, user_data, phone_id):
@@ -1284,19 +1284,19 @@ def agent_response(prompt, user_data, phone_id):
                         if user_data['sender'] == conv_data['agent']:
                             print(f"Agent {user_data['sender']} ending conversation")
                             send_message(
-                                "You've ended the conversation. The customer will now return to the bot.",
+                                "You've ended the conversation.",
                                 conv_data['agent'],
                                 phone_id
                             )
                             send_message(
-                                "The agent has ended the conversation. You're now back with the bot.",
+                                "The agent has ended the conversation.",
                                 conv_data['customer'],
                                 phone_id
                             )
                         else:
                             print(f"Customer {user_data['sender']} ending conversation")
                             send_message(
-                                "You've ended the conversation with the agent. You're now back with the bot.",
+                                "You've ended the conversation with the agent.",
                                 conv_data['customer'],
                                 phone_id
                             )
@@ -1306,20 +1306,25 @@ def agent_response(prompt, user_data, phone_id):
                                 phone_id
                             )
                             
-                            # Reset agent state
-                            agent_state = {'step': 'agent_response', 'sender': conv_data['agent']}
+                            # Reset agent state to be available for new requests
+                            agent_state = {
+                                'step': 'agent_response', 
+                                'sender': conv_data['agent'],
+                                'awaiting_agent_response': False,
+                                'active_chat': False
+                            }
                             print(f"Resetting agent {conv_data['agent']} state to: {agent_state}")
                             update_user_state(conv_data['agent'], agent_state)
 
-                        # Reset customer state to welcome
+                        # Reset customer state to welcome without sending welcome message
                         customer_welcome_state = {'step': 'welcome', 'sender': conv_data['customer']}
                         print(f"Resetting customer {conv_data['customer']} state to: {customer_welcome_state}")
                         update_user_state(conv_data['customer'], customer_welcome_state)
                         
-                        # Delete conversation and return to welcome
+                        # Delete conversation
                         print(f"Deleting conversation {conversation_id}")
                         redis_client.delete(f"agent_conversation:{conversation_id}")
-                        return handle_welcome("", {'sender': conv_data['customer']}, phone_id)
+                        return customer_welcome_state
 
                     # Forward messages between agent and customer
                     if user_data['sender'] == conv_data['agent']:
@@ -1378,7 +1383,7 @@ def agent_response(prompt, user_data, phone_id):
                 customer_notification = (
                     "🎉 *Agent Connected!*\n\n"
                     "An agent has joined your conversation. You can now chat directly.\n"
-                    "Type 'exit' at any time to end the conversation and return to the bot."
+                    "Type 'exit' at any time to end the conversation."
                 )
                 send_message(customer_notification, customer_number, phone_id)
                 print(f"✅ Customer {customer_number} notified of agent connection")
@@ -1387,7 +1392,7 @@ def agent_response(prompt, user_data, phone_id):
                 agent_notification = (
                     "✅ *Chat Accepted!*\n\n"
                     "You are now connected to the customer.\n"
-                    "Type 'exit' to end the conversation and return to the bot.\n\n"
+                    "Type 'exit' to end the conversation.\n\n"
                     f"Customer: {customer_number}"
                 )
                 send_message(agent_notification, user_data['sender'], phone_id)
@@ -1398,6 +1403,7 @@ def agent_response(prompt, user_data, phone_id):
                     'step': 'agent_response',
                     'conversation_id': conversation_id,
                     'active_chat': True,
+                    'agent_handover': False,  # Remove handover flag
                     'sender': customer_number
                 }
                 print(f"🎯 Setting customer {customer_number} state to: {customer_state}")
@@ -1412,6 +1418,7 @@ def agent_response(prompt, user_data, phone_id):
                     'step': 'agent_response',
                     'conversation_id': conversation_id,
                     'active_chat': True,
+                    'awaiting_agent_response': False,  # Remove awaiting flag
                     'sender': user_data['sender']
                 }
                 print(f"🎯 Setting agent {user_data['sender']} state to: {agent_state}")
@@ -1458,8 +1465,19 @@ def agent_response(prompt, user_data, phone_id):
                     redis_client.delete(f"agent_conversation:{conversation_id}")
                     print(f"🗑️ Conversation {conversation_id} deleted")
                     
-                    # Reset customer to welcome
-                    return handle_welcome("", {'sender': customer_number}, phone_id)
+                    # Reset agent state to be available for new requests
+                    agent_state = {
+                        'step': 'agent_response',
+                        'sender': user_data['sender'],
+                        'awaiting_agent_response': False,
+                        'active_chat': False
+                    }
+                    update_user_state(user_data['sender'], agent_state)
+                    
+                    # Reset customer to welcome without sending welcome message
+                    customer_welcome_state = {'step': 'welcome', 'sender': customer_number}
+                    update_user_state(customer_number, customer_welcome_state)
+                    return customer_welcome_state
                 return {'step': 'agent_response'}
             else:
                 # If we reach here, the prompt didn't match accept or reject
@@ -1656,6 +1674,14 @@ def message_handler(prompt, sender, phone_id):
     # Normal user handling
     print(f"🔍 Normal user handling for {sender}")
     print(f"🔍 User state before normal handling: {user_state}")
+    
+    # Check if user is in agent handover process - don't reset to welcome
+    if user_state.get('step') == 'agent_response' and user_state.get('agent_handover'):
+        print(f"🔄 User {sender} is in agent handover process, not resetting to welcome")
+        # Let the agent_response handler deal with this
+        updated_state = agent_response(prompt, user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
     
     if text in ["hi", "hello", "hie", "hey", "start"]:
         print(f"🔄 User {sender} sent greeting, resetting to welcome")
