@@ -27,6 +27,7 @@ redis_client = Redis(
     token=os.environ.get('UPSTASH_REDIS_TOKEN')
 )
 
+# Global variables removed - each conversation will have its own agent and conversation ID
 
 
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
@@ -405,6 +406,51 @@ def handle_welcome(prompt, user_data, phone_id):
     
     update_user_state(user_data['sender'], {'step': 'main_menu'})
     return {'step': 'main_menu'}
+
+def handle_restart_confirmation(prompt, user_data, phone_id):
+    try:
+        text = (prompt or "").strip().lower()
+
+        # Initial entry or unrecognized input -> show Yes/No buttons
+        if text == "" or text in ["restart", "start", "menu"]:
+            send_button_message(
+                "Would you like to restart with the bot?",
+                [
+                    {"id": "restart_yes", "title": "Yes"},
+                    {"id": "restart_no", "title": "No"}
+                ],
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'restart_confirmation'})
+            return {'step': 'restart_confirmation'}
+
+        # Positive confirmation -> go to welcome flow
+        if text in ["yes", "y", "restart_yes", "ok", "sure", "yeah", "yep"]:
+            return handle_welcome("", user_data, phone_id)
+
+        # Negative confirmation -> send goodbye and reset to welcome state
+        if text in ["no", "n", "restart_no", "nope", "nah"]:
+            send_message("Have a good day!", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {'step': 'welcome'})
+            return {'step': 'welcome'}
+
+        # Any other input -> re-send buttons
+        send_button_message(
+            "Please confirm: would you like to restart with the bot?",
+            [
+                {"id": "restart_yes", "title": "Yes"},
+                {"id": "restart_no", "title": "No"}
+            ],
+            user_data['sender'],
+            phone_id
+        )
+        return {'step': 'restart_confirmation'}
+
+    except Exception as e:
+        logging.error(f"Error in handle_restart_confirmation: {e}")
+        send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
 
 def handle_main_menu(prompt, user_data, phone_id):
     try:
@@ -1268,13 +1314,14 @@ def agent_response(prompt, user_data, phone_id):
                             customer_number = conv_data.get('customer')
                             # Notify both parties
                             send_message(
-                                "Agent has joined the conversation. You can now chat directly.\n",
+                                "Agent has joined the conversation. You can now chat directly.\n"
+                                "Type 'exit' at any time to end the conversation.",
                                 customer_number,
                                 phone_id
                             )
                             send_message(
                                 "✅ You are now connected to the customer.\n"
-                                "Type 'exit' to end the conversation and return them bot anytime.",
+                                "Type 'exit' to end the conversation and return to the bot.",
                                 user_data['sender'],
                                 phone_id
                             )
@@ -1363,15 +1410,15 @@ def agent_response(prompt, user_data, phone_id):
                         print(f"Resetting agent {conv_data['agent']} state to: {agent_state}")
                         update_user_state(conv_data['agent'], agent_state)
 
-                    # Reset customer state to welcome
-                    customer_welcome_state = {'step': 'welcome', 'sender': conv_data['customer']}
-                    print(f"Resetting customer {conv_data['customer']} state to: {customer_welcome_state}")
-                    update_user_state(conv_data['customer'], customer_welcome_state)
+                    # Ask customer if they want to restart with the bot
+                    restart_state = {'step': 'restart_confirmation', 'sender': conv_data['customer']}
+                    print(f"Setting customer {conv_data['customer']} state to: {restart_state}")
+                    update_user_state(conv_data['customer'], restart_state)
                     
-                    # Delete conversation and return to welcome
+                    # Delete conversation and ask for restart confirmation
                     print(f"Deleting conversation {conversation_id}")
                     redis_client.delete(f"agent_conversation:{conversation_id}")
-                    return handle_welcome("", {'sender': conv_data['customer']}, phone_id)
+                    return handle_restart_confirmation("", {'sender': conv_data['customer']}, phone_id)
 
                 # Forward messages between agent and customer
                 if user_data['sender'] == conv_data['agent']:
@@ -1492,6 +1539,7 @@ def agent_response(prompt, user_data, phone_id):
 # Action mapping
 action_mapping = {
     "welcome": handle_welcome,
+    "restart_confirmation": handle_restart_confirmation,
     "main_menu": handle_main_menu,
     "about_menu": handle_about_menu,
     "services_menu": handle_services_menu,
@@ -1504,7 +1552,8 @@ action_mapping = {
     "contact_menu": handle_contact_menu,
     "get_callback_details": handle_get_callback_details,
     "human_agent": agent_response,
-    "agent_response": agent_response
+    "agent_response": agent_response,
+    "restart_confirmation": handle_restart_confirmation
 }
 
 def get_action(current_state, prompt, user_data, phone_id):
