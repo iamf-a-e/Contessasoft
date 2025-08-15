@@ -27,7 +27,6 @@ redis_client = Redis(
     token=os.environ.get('UPSTASH_REDIS_TOKEN')
 )
 
-# Global variables removed - each conversation will have its own agent and conversation ID
 
 
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
@@ -1269,14 +1268,13 @@ def agent_response(prompt, user_data, phone_id):
                             customer_number = conv_data.get('customer')
                             # Notify both parties
                             send_message(
-                                "Agent has joined the conversation. You can now chat directly.\n"
-                                "Type 'exit' at any time to end the conversation.",
+                                "Agent has joined the conversation. You can now chat directly.\n",
                                 customer_number,
                                 phone_id
                             )
                             send_message(
                                 "✅ You are now connected to the customer.\n"
-                                "Type 'exit' to end the conversation and return to the bot.",
+                                "Type 'exit' to end the conversation and return them bot anytime.",
                                 user_data['sender'],
                                 phone_id
                             )
