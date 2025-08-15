@@ -1209,6 +1209,7 @@ def human_agent(prompt, user_data, phone_id):
         
         button_sent = send_button_message(
             f"New Chat Request\n\n"
+            f"You can send 'exit' to end the chat anytime.\n\n"
             f"From: {user_data.get('name', 'Customer')} - {user_data['sender']}\n"
             f"Conversation ID: {conversation_id}",
             [
