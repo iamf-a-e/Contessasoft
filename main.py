@@ -414,7 +414,7 @@ def handle_restart_confirmation(prompt, user_data, phone_id):
         # Initial entry or unrecognized input -> show Yes/No buttons
         if text == "" or text in ["restart", "start", "menu"]:
             send_button_message(
-                "Would you like to restart with the bot?",
+                "Would you like to go back to main menu?",
                 [
                     {"id": "restart_yes", "title": "Yes"},
                     {"id": "restart_no", "title": "No"}
