@@ -1259,6 +1259,79 @@ def agent_response(prompt, user_data, phone_id):
                 print(f"Found conversation data: {conv_data}")
                 print(f"Current sender: {user_data['sender']}, Agent: {conv_data['agent']}, Customer: {conv_data['customer']}")
 
+                # If conversation is not active yet, handle accept/reject before any forwarding
+                if not conv_data.get('active'):
+                    # Only the assigned agent can accept/reject
+                    if user_data['sender'] == conv_data['agent']:
+                        # Accept chat
+                        if prompt == "accept_chat" or "accept" in prompt.lower():
+                            print("Processing accept chat request (pre-activation path)")
+                            customer_number = conv_data.get('customer')
+                            # Notify both parties
+                            send_message(
+                                "Agent has joined the conversation. You can now chat directly.\n"
+                                "Type 'exit' at any time to end the conversation.",
+                                customer_number,
+                                phone_id
+                            )
+                            send_message(
+                                "✅ You are now connected to the customer.\n"
+                                "Type 'exit' to end the conversation and return to the bot.",
+                                user_data['sender'],
+                                phone_id
+                            )
+
+                            # Activate the conversation
+                            conv_data['active'] = True
+                            redis_client.setex(f"agent_conversation:{conversation_id}", 86400, json.dumps(conv_data))
+
+                            # Update customer state
+                            customer_state = {
+                                'step': 'agent_response',
+                                'conversation_id': conversation_id,
+                                'active_chat': True,
+                                'sender': customer_number
+                            }
+                            print(f"Setting customer {customer_number} state to: {customer_state}")
+                            update_user_state(customer_number, customer_state)
+
+                            # Update agent state
+                            agent_state = {
+                                'step': 'agent_response',
+                                'conversation_id': conversation_id,
+                                'active_chat': True,
+                                'sender': user_data['sender']
+                            }
+                            print(f"Setting agent {user_data['sender']} state to: {agent_state}")
+                            update_user_state(user_data['sender'], agent_state)
+
+                            return {
+                                'step': 'agent_response',
+                                'conversation_id': conversation_id,
+                                'active_chat': True
+                            }
+
+                        # Reject chat
+                        elif prompt == "reject_chat" or "reject" in prompt.lower():
+                            print("Processing reject chat request (pre-activation path)")
+                            customer_number = conv_data.get('customer')
+                            send_message(
+                                "Sorry, the agent is unable to take your chat at this time. "
+                                "Please try again later or leave a message.",
+                                customer_number,
+                                phone_id
+                            )
+                            redis_client.delete(f"agent_conversation:{conversation_id}")
+                            return handle_welcome("", {'sender': customer_number}, phone_id)
+                        else:
+                            print(f"Unexpected prompt before activation: '{prompt}'")
+                            send_message("Invalid selection. Please choose 'Accept Chat' or 'Reject Chat'.", user_data['sender'], phone_id)
+                            return {'step': 'agent_response', 'conversation_id': conversation_id}
+                    else:
+                        # Customer messaged before agent accepts; remind them to wait
+                        send_message("Please wait for the agent to accept your request.", conv_data['customer'], phone_id)
+                        return {'step': 'agent_response', 'conversation_id': conversation_id}
+
                 # Exit command ends chat
                 if prompt.lower() == "exit":
                     print(f"Exit command received from {user_data['sender']}")
