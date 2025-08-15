@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["+263785019494", "263785019494", "0785019494"]
+AGENT_NUMBERS = ["+263785019494"]
 
 # Redis client setup
 redis_client = Redis(
@@ -1322,16 +1322,35 @@ def agent_response(prompt, user_data, phone_id):
                         return handle_welcome("", {'sender': conv_data['customer']}, phone_id)
 
                     # Forward messages between agent and customer
-                    if user_data['sender'] == conv_data['agent']:
+                    print(f"🔍 Message forwarding check:")
+                    print(f"🔍 Current sender: {user_data['sender']} (type: {type(user_data['sender'])})")
+                    print(f"🔍 Conversation agent: {conv_data['agent']} (type: {type(conv_data['agent'])})")
+                    print(f"🔍 Conversation customer: {conv_data['customer']} (type: {type(conv_data['customer'])})")
+                    print(f"🔍 Sender == agent: {user_data['sender'] == conv_data['agent']}")
+                    
+                    # Normalize phone numbers for comparison
+                    normalized_sender = normalize_phone_number(user_data['sender'])
+                    normalized_agent = normalize_phone_number(conv_data['agent'])
+                    normalized_customer = normalize_phone_number(conv_data['customer'])
+                    
+                    print(f"🔍 Normalized comparison:")
+                    print(f"🔍 Normalized sender: {normalized_sender}")
+                    print(f"🔍 Normalized agent: {normalized_agent}")
+                    print(f"🔍 Normalized customer: {normalized_customer}")
+                    
+                    if normalized_sender == normalized_agent:
                         # Agent message to customer
-                        print(f"Agent {user_data['sender']} sending message to customer {conv_data['customer']}: {prompt}")
+                        print(f"✅ Agent {user_data['sender']} sending message to customer {conv_data['customer']}: {prompt}")
                         send_message(f"👨‍💼 Agent: {prompt}", conv_data['customer'], phone_id)
                         print(f"✅ Forwarded agent message to customer: {conv_data['customer']}")
-                    else:
+                    elif normalized_sender == normalized_customer:
                         # Customer message to agent
-                        print(f"Customer {user_data['sender']} sending message to agent {conv_data['agent']}: {prompt}")
+                        print(f"✅ Customer {user_data['sender']} sending message to agent {conv_data['agent']}: {prompt}")
                         send_message(f"👤 Customer: {prompt}", conv_data['agent'], phone_id)
                         print(f"✅ Forwarded customer message to agent: {conv_data['agent']}")
+                    else:
+                        print(f"⚠️ Unknown sender: {user_data['sender']} (normalized: {normalized_sender})")
+                        print(f"⚠️ Not matching agent: {normalized_agent} or customer: {normalized_customer}")
 
                     # Return current state to maintain conversation
                     return {
@@ -1476,10 +1495,13 @@ def agent_response(prompt, user_data, phone_id):
         # Check if this is an agent trying to send a message after accepting
         if user_data.get('sender') in AGENT_NUMBERS or normalize_phone_number(user_data.get('sender')) in AGENT_NUMBERS:
             print(f"🔄 Agent {user_data.get('sender')} sending message after accept, checking conversation status")
+            print(f"🔄 Agent sender: {user_data.get('sender')}, Normalized: {normalize_phone_number(user_data.get('sender'))}")
             if conversation_id:
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
                 if conv_data_raw:
                     conv_data = json.loads(conv_data_raw)
+                    print(f"🔄 Conversation data for agent: {conv_data}")
+                    print(f"🔄 Conversation agent: {conv_data.get('agent')}, Current sender: {user_data.get('sender')}")
                     if conv_data.get('active', False):
                         print(f"✅ Conversation is active, forwarding message")
                         # Forward the message to customer
@@ -1509,7 +1531,13 @@ def agent_response(prompt, user_data, phone_id):
             if conv_data_raw:
                 conv_data = json.loads(conv_data_raw)
                 print(f"🔄 Conversation data for customer: {conv_data}")
-                if conv_data.get('active', False):
+                
+                # Check if this is actually the customer
+                normalized_sender = normalize_phone_number(user_data.get('sender'))
+                normalized_customer = normalize_phone_number(conv_data.get('customer'))
+                print(f"🔄 Normalized sender: {normalized_sender}, Normalized customer: {normalized_customer}")
+                
+                if conv_data.get('active', False) and normalized_sender == normalized_customer:
                     print(f"✅ Conversation is active, forwarding customer message to agent")
                     # Forward the message to agent
                     agent_number = conv_data.get('agent')
@@ -1530,6 +1558,10 @@ def agent_response(prompt, user_data, phone_id):
                         'conversation_id': conversation_id,
                         'active_chat': True
                     }
+                elif conv_data.get('active', False):
+                    print(f"⚠️ Conversation is active but sender {normalized_sender} doesn't match customer {normalized_customer}")
+                else:
+                    print(f"⚠️ Conversation exists but is not active")
         
         # If none of the above conditions are met, return to welcome
         print(f"🔄 Returning to welcome for sender: {user_data.get('sender')}")
