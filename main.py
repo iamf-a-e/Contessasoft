@@ -1412,6 +1412,14 @@ def agent_response(prompt, user_data, phone_id):
                 # Verify the state was saved correctly
                 saved_customer_state = get_user_state(customer_number)
                 print(f"🎯 Verified customer state after save: {saved_customer_state}")
+                
+                # Double-check that the customer state is correct
+                if saved_customer_state.get('active_chat') != True:
+                    print(f"⚠️ WARNING: Customer state not properly updated! Expected active_chat=True, got: {saved_customer_state.get('active_chat')}")
+                    # Force update again
+                    update_user_state(customer_number, customer_state)
+                    saved_customer_state = get_user_state(customer_number)
+                    print(f"🎯 Re-verified customer state after force update: {saved_customer_state}")
 
                 # Update agent state to remove awaiting_agent_response and set active_chat
                 agent_state = {
@@ -1549,14 +1557,14 @@ def agent_response(prompt, user_data, phone_id):
                         'active_chat': True
                     }
         
-        # If none of the above conditions are met, return to welcome
+        # If none of the above conditions are met, return to welcome without sending message
         print(f"🔄 Returning to welcome for sender: {user_data.get('sender')}")
-        return handle_welcome("", user_data, phone_id)
+        return {'step': 'welcome', 'sender': user_data.get('sender')}
 
     except Exception as e:
         logging.error(f"Error in agent_response: {e}")
         send_message("An error occurred in agent communication. Returning to main menu.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
+        return {'step': 'welcome', 'sender': user_data.get('sender')}
 
 
 # Action mapping
@@ -1591,8 +1599,8 @@ def get_action(current_state, prompt, user_data, phone_id):
         return result
     except Exception as e:
         logging.error(f"[get_action] Error in handler {handler.__name__} for state {current_state}: {e}", exc_info=True)
-        # Fallback to welcome
-        return handle_welcome("", user_data, phone_id)
+        # Fallback to welcome without sending message
+        return {'step': 'welcome', 'sender': user_data.get('sender')}
 
 
 # Message handler
@@ -1676,14 +1684,17 @@ def message_handler(prompt, sender, phone_id):
     print(f"🔍 User state before normal handling: {user_state}")
     
     # Check if user is in agent handover process - don't reset to welcome
-    if user_state.get('step') == 'agent_response' and user_state.get('agent_handover'):
+    if user_state.get('step') == 'agent_response' and (user_state.get('agent_handover') or user_state.get('conversation_id')):
         print(f"🔄 User {sender} is in agent handover process, not resetting to welcome")
+        print(f"🔄 Agent handover: {user_state.get('agent_handover')}, Conversation ID: {user_state.get('conversation_id')}")
+        print(f"🔄 Active chat: {user_state.get('active_chat')}")
         # Let the agent_response handler deal with this
         updated_state = agent_response(prompt, user_state, phone_id)
         update_user_state(sender, updated_state)
         return
     
-    if text in ["hi", "hello", "hie", "hey", "start"]:
+    # Don't reset to welcome if user is in any agent-related state
+    if text in ["hi", "hello", "hie", "hey", "start"] and user_state.get('step') != 'agent_response':
         print(f"🔄 User {sender} sent greeting, resetting to welcome")
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
