@@ -1259,12 +1259,15 @@ def agent_response(prompt, user_data, phone_id):
         
         # First, check if we're in an active chat conversation
         conversation_id = user_data.get('conversation_id')
+        print(f"🔍 Checking conversation_id: {conversation_id}")
         if conversation_id:
             conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
+            print(f"🔍 Conversation data raw: {conv_data_raw}")
             if conv_data_raw:
                 conv_data = json.loads(conv_data_raw)
-                print(f"Found conversation data: {conv_data}")
-                print(f"Current sender: {user_data['sender']}, Agent: {conv_data['agent']}, Customer: {conv_data['customer']}")
+                print(f"🔍 Found conversation data: {conv_data}")
+                print(f"🔍 Current sender: {user_data['sender']}, Agent: {conv_data['agent']}, Customer: {conv_data['customer']}")
+                print(f"🔍 Conversation active: {conv_data.get('active', False)}")
 
                 # Check if conversation is actually active
                 if conv_data.get('active', False):
@@ -1342,7 +1345,8 @@ def agent_response(prompt, user_data, phone_id):
             
             # Check for accept/reject buttons (both exact match and partial)
             if prompt == "accept_chat" or "accept" in prompt.lower():
-                print("Processing accept chat request")
+                print("🎯 Processing accept chat request")
+                print(f"🎯 Agent {user_data.get('sender')} is accepting chat")
                 conversation_id = user_data.get('conversation_id')
                 print(f"Looking for conversation: {conversation_id}")
                 conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
@@ -1448,6 +1452,42 @@ def agent_response(prompt, user_data, phone_id):
                 send_message("Invalid selection. Please choose 'Accept Chat' or 'Reject Chat'.", user_data['sender'], phone_id)
                 return {'step': 'agent_response'}
 
+        # If we reach here, it means we have a conversation_id but the conversation is not active
+        # and we're not in the accept/reject phase. This could happen if the agent sends a message
+        # after accepting but before the conversation is properly marked as active.
+        print(f"⚠️ Unexpected state: conversation_id={conversation_id}, awaiting_response={user_data.get('awaiting_agent_response')}, active_chat={user_data.get('active_chat')}")
+        
+        # Check if this is an agent trying to send a message after accepting
+        if user_data.get('sender') in AGENT_NUMBERS or normalize_phone_number(user_data.get('sender')) in AGENT_NUMBERS:
+            print(f"🔄 Agent {user_data.get('sender')} sending message after accept, checking conversation status")
+            if conversation_id:
+                conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
+                if conv_data_raw:
+                    conv_data = json.loads(conv_data_raw)
+                    if conv_data.get('active', False):
+                        print(f"✅ Conversation is active, forwarding message")
+                        # Forward the message to customer
+                        customer_number = conv_data.get('customer')
+                        send_message(f"👨‍💼 Agent: {prompt}", customer_number, phone_id)
+                        print(f"✅ Forwarded agent message to customer: {customer_number}")
+                        
+                        # Update agent state to active chat
+                        agent_state = {
+                            'step': 'agent_response',
+                            'conversation_id': conversation_id,
+                            'active_chat': True,
+                            'sender': user_data['sender']
+                        }
+                        update_user_state(user_data['sender'], agent_state)
+                        
+                        return {
+                            'step': 'agent_response',
+                            'conversation_id': conversation_id,
+                            'active_chat': True
+                        }
+        
+        # If none of the above conditions are met, return to welcome
+        print(f"🔄 Returning to welcome for sender: {user_data.get('sender')}")
         return handle_welcome("", user_data, phone_id)
 
     except Exception as e:
@@ -1479,11 +1519,13 @@ def get_action(current_state, prompt, user_data, phone_id):
     handler = action_mapping.get(current_state, handle_welcome)
 
     # Log the routing info
-    logging.info(f"[get_action] State: {current_state}, Prompt: {prompt}, "
-                 f"Handler: {handler.__name__}, Sender: {user_data.get('sender')}")
+    print(f"🔍 [get_action] State: {current_state}, Prompt: '{prompt}', Handler: {handler.__name__}, Sender: {user_data.get('sender')}")
+    print(f"🔍 [get_action] User data: {user_data}")
 
     try:
-        return handler(prompt, user_data, phone_id)
+        result = handler(prompt, user_data, phone_id)
+        print(f"🔍 [get_action] Handler returned: {result}")
+        return result
     except Exception as e:
         logging.error(f"[get_action] Error in handler {handler.__name__} for state {current_state}: {e}", exc_info=True)
         # Fallback to welcome
@@ -1533,24 +1575,45 @@ def message_handler(prompt, sender, phone_id):
     user_state = get_user_state(sender)
     user_state['sender'] = sender
     
-    print(f"User {sender} state: {user_state}")
+    print(f"🔍 User {sender} state: {user_state}")
+    print(f"🔍 Step: {user_state.get('step')}, Active chat: {user_state.get('active_chat')}")
     
     # If user is in agent_response state with active_chat, route to agent_response
     if user_state.get('step') == 'agent_response' and user_state.get('active_chat'):
-        print(f"User {sender} is in active agent chat, routing to agent_response")
+        print(f"✅ User {sender} is in active agent chat, routing to agent_response")
         updated_state = agent_response(prompt, user_state, phone_id)
         update_user_state(sender, updated_state)
         return
     
+    # Also check if user has a conversation_id and the conversation is active
+    conversation_id = user_state.get('conversation_id')
+    if conversation_id:
+        print(f"🔍 User {sender} has conversation_id: {conversation_id}")
+        conv_data_raw = redis_client.get(f"agent_conversation:{conversation_id}")
+        if conv_data_raw:
+            conv_data = json.loads(conv_data_raw)
+            print(f"🔍 Conversation data: {conv_data}")
+            if conv_data.get('active', False):
+                print(f"✅ Conversation is active, routing to agent_response")
+                # Update user state to include active_chat
+                user_state['active_chat'] = True
+                updated_state = agent_response(prompt, user_state, phone_id)
+                update_user_state(sender, updated_state)
+                return
+    
     # Normal user handling
+    print(f"🔍 Normal user handling for {sender}")
     if text in ["hi", "hello", "hie", "hey", "start"]:
+        print(f"🔄 User {sender} sent greeting, resetting to welcome")
         user_state = {'step': 'welcome', 'sender': sender}
         updated_state = get_action('welcome', "", user_state, phone_id)
         update_user_state(sender, updated_state)
         return
 
     step = user_state.get('step') or 'welcome'
+    print(f"🔍 Calling get_action with step: {step}, prompt: '{prompt}'")
     updated_state = get_action(step, prompt, user_state, phone_id)
+    print(f"🔍 get_action returned: {updated_state}")
     update_user_state(sender, updated_state)
 
 
