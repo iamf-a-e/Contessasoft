@@ -414,7 +414,7 @@ def handle_restart_confirmation(prompt, user_data, phone_id):
         # Initial entry or unrecognized input -> show Yes/No buttons
         if text == "" or text in ["restart", "start", "menu"]:
             send_button_message(
-                "Would you like to go back to main menu?",
+                "Would you like to restart with the bot?",
                 [
                     {"id": "restart_yes", "title": "Yes"},
                     {"id": "restart_no", "title": "No"}
@@ -1314,13 +1314,14 @@ def agent_response(prompt, user_data, phone_id):
                             customer_number = conv_data.get('customer')
                             # Notify both parties
                             send_message(
-                                "Agent has joined the conversation. You can now chat directly.\n",
+                                "Agent has joined the conversation. You can now chat directly.\n"
+                                "Type 'exit' at any time to end the conversation.",
                                 customer_number,
                                 phone_id
                             )
                             send_message(
                                 "✅ You are now connected to the customer.\n"
-                                "Type 'exit' to end the conversation and return the customer to the bot.",
+                                "Type 'exit' to end the conversation and return to the bot.",
                                 user_data['sender'],
                                 phone_id
                             )
