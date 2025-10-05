@@ -29,6 +29,7 @@ redis_client = Redis(
 
 # Global variables removed - each conversation will have its own agent and conversation ID
 
+
 required_vars = ['WA_TOKEN', 'PHONE_ID', 'UPSTASH_REDIS_URL', 'UPSTASH_REDIS_TOKEN']
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
@@ -44,129 +45,6 @@ except Exception as e:
     
 logging.basicConfig(level=logging.INFO)
 
-# Add Conversation Logger Class
-class ConversationLogger:
-    def __init__(self, redis_client):
-        self.redis = redis_client
-    
-    def log_message(self, phone_number, message_type, content, direction, step=None, metadata=None):
-        """Log a message in the conversation history"""
-        try:
-            timestamp = datetime.now().isoformat()
-            conversation_key = f"conversation:{phone_number}"
-            
-            message_entry = {
-                "timestamp": timestamp,
-                "type": message_type,  # 'text', 'button', 'list', 'system'
-                "content": content,
-                "direction": direction,  # 'incoming' or 'outgoing'
-                "step": step,
-                "metadata": metadata or {}
-            }
-            
-            # Get existing conversation or create new one
-            existing_conversation = self.redis.get(conversation_key)
-            if existing_conversation:
-                conversation_data = json.loads(existing_conversation)
-            else:
-                conversation_data = {
-                    "phone_number": phone_number,
-                    "start_time": timestamp,
-                    "messages": []
-                }
-            
-            # Add new message
-            conversation_data["messages"].append(message_entry)
-            conversation_data["last_updated"] = timestamp
-            
-            # Save back to Redis with 30-day expiration
-            self.redis.setex(conversation_key, 2592000, json.dumps(conversation_data))
-            
-            # Also maintain a recent conversations list
-            self._update_recent_conversations(phone_number, timestamp)
-            
-            return True
-            
-        except Exception as e:
-            logging.error(f"Error logging conversation: {e}")
-            return False
-    
-    def _update_recent_conversations(self, phone_number, timestamp):
-        """Update the list of recent conversations"""
-        try:
-            recent_key = "recent_conversations"
-            recent_data = self.redis.get(recent_key)
-            
-            if recent_data:
-                recent_conversations = json.loads(recent_data)
-            else:
-                recent_conversations = []
-            
-            # Update or add this conversation
-            conversation_exists = False
-            for conv in recent_conversations:
-                if conv["phone_number"] == phone_number:
-                    conv["last_activity"] = timestamp
-                    conversation_exists = True
-                    break
-            
-            if not conversation_exists:
-                recent_conversations.append({
-                    "phone_number": phone_number,
-                    "last_activity": timestamp,
-                    "start_time": timestamp
-                })
-            
-            # Keep only last 100 conversations
-            recent_conversations.sort(key=lambda x: x["last_activity"], reverse=True)
-            recent_conversations = recent_conversations[:100]
-            
-            self.redis.setex(recent_key, 2592000, json.dumps(recent_conversations))
-            
-        except Exception as e:
-            logging.error(f"Error updating recent conversations: {e}")
-    
-    def get_conversation_history(self, phone_number, limit=50):
-        """Get conversation history for a phone number"""
-        try:
-            conversation_key = f"conversation:{phone_number}"
-            conversation_data = self.redis.get(conversation_key)
-            
-            if not conversation_data:
-                return None
-            
-            conversation = json.loads(conversation_data)
-            
-            # Return limited number of messages if specified
-            if limit and len(conversation["messages"]) > limit:
-                conversation["messages"] = conversation["messages"][-limit:]
-            
-            return conversation
-            
-        except Exception as e:
-            logging.error(f"Error getting conversation history: {e}")
-            return None
-    
-    def get_recent_conversations(self, limit=20):
-        """Get list of recent conversations"""
-        try:
-            recent_key = "recent_conversations"
-            recent_data = self.redis.get(recent_key)
-            
-            if not recent_data:
-                return []
-            
-            recent_conversations = json.loads(recent_data)
-            return recent_conversations[:limit]
-            
-        except Exception as e:
-            logging.error(f"Error getting recent conversations: {e}")
-            return []
-
-# Initialize conversation logger
-conversation_logger = ConversationLogger(redis_client)
-
-# Existing Enum classes remain the same...
 class MainMenuOptions(Enum):
     ABOUT = "Learn about Contessasoft"
     SERVICES = "Our Services"
@@ -287,18 +165,7 @@ def update_user_state(phone_number, updates):
     redis_client.setex(f"user_state:{phone_number}", 86400, json.dumps(current))
     print(f"State saved for {phone_number}")
 
-# Modified send_message function to include conversation logging
-def send_message(text, recipient, phone_id, step=None, message_type="text"):
-    # Log outgoing message
-    conversation_logger.log_message(
-        recipient, 
-        message_type, 
-        text, 
-        "outgoing", 
-        step=step,
-        metadata={"phone_id": phone_id}
-    )
-    
+def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
         'Authorization': f'Bearer {wa_token}',
@@ -332,18 +199,7 @@ def send_message(text, recipient, phone_id, step=None, message_type="text"):
     except requests.exceptions.RequestException as e:
         logging.error(f"Failed to send message: {e}")
 
-# Modified send_button_message function to include conversation logging
-def send_button_message(text, buttons, recipient, phone_id, step=None):
-    # Log outgoing button message
-    conversation_logger.log_message(
-        recipient, 
-        "button", 
-        text, 
-        "outgoing", 
-        step=step,
-        metadata={"buttons": buttons, "phone_id": phone_id}
-    )
-    
+def send_button_message(text, buttons, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
         'Authorization': f'Bearer {wa_token}',
@@ -406,7 +262,7 @@ def send_button_message(text, buttons, recipient, phone_id, step=None):
     if not button_items:
         print("No valid buttons found, falling back to text message")
         fallback_text = f"{text}\n\n" + "\n".join(f"- {btn.get('title', 'Option')}" for btn in buttons[:3])
-        send_message(fallback_text, recipient, phone_id, step=step)
+        send_message(fallback_text, recipient, phone_id)
         return False
     
     # Ensure text is within WhatsApp limits and clean it
@@ -466,21 +322,11 @@ def send_button_message(text, buttons, recipient, phone_id, step=None):
         
         # Fallback to simple text message
         fallback_text = f"{text}\n\n" + "\n".join(f"- {btn.get('title', 'Option')}" for btn in buttons[:3])
-        send_message(fallback_text, recipient, phone_id, step=step)
+        send_message(fallback_text, recipient, phone_id)
         return False
 
-# Modified send_list_message function to include conversation logging
-def send_list_message(text, options, recipient, phone_id, step=None):
-    # Log outgoing list message
-    conversation_logger.log_message(
-        recipient, 
-        "list", 
-        text, 
-        "outgoing", 
-        step=step,
-        metadata={"options": options, "phone_id": phone_id}
-    )
-    
+
+def send_list_message(text, options, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
         'Authorization': f'Bearer {wa_token}',
@@ -535,201 +381,12 @@ def send_list_message(text, options, recipient, phone_id, step=None):
         logging.error(f"Failed to send list message: {error_detail}")
         # Fallback to simple message if list fails
         fallback_msg = f"{text}\n\n" + "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options[:10]))
-        send_message(fallback_msg, recipient, phone_id, step=step)
+        send_message(fallback_msg, recipient, phone_id)
         return False
     except Exception as e:
         logging.error(f"Unexpected error sending list message: {str(e)}")
         return False
 
-# All handler functions remain the same but will now automatically log conversations
-# through the modified send_message, send_button_message, and send_list_message functions
-
-# Modified message_handler to log incoming messages
-def message_handler(prompt, sender, phone_id):
-    text = prompt.strip().lower()
-
-    # Log incoming message
-    user_state = get_user_state(sender)
-    conversation_logger.log_message(
-        sender, 
-        "text", 
-        prompt, 
-        "incoming", 
-        step=user_state.get('step'),
-        metadata={"phone_id": phone_id}
-    )
-
-    # If the sender is an agent, set them to agent mode on first contact
-    normalized_sender = normalize_phone_number(sender)
-    print(f"Checking if {sender} (normalized: {normalized_sender}) is in AGENT_NUMBERS: {AGENT_NUMBERS}")
-    print(f"Sender type: {type(sender)}, AGENT_NUMBERS types: {[type(x) for x in AGENT_NUMBERS]}")
-    
-    if normalized_sender in AGENT_NUMBERS or sender in AGENT_NUMBERS:
-        print(f"Agent message received: '{prompt}' from {sender}")
-        print(f"AGENT_NUMBERS: {AGENT_NUMBERS}")
-        state = get_user_state(sender)
-        print(f"Current agent state: {state}")
-        
-        # Also try to get state for normalized sender
-        if state.get('step') != 'agent_response':
-            normalized_state = get_user_state(normalized_sender)
-            print(f"Normalized sender state: {normalized_state}")
-            if normalized_state.get('step') == 'agent_response':
-                state = normalized_state
-                print(f"Using normalized sender state: {state}")
-        
-        if state.get('step') != 'agent_response':
-            print(f"Updating agent state to agent_response")
-            update_user_state(sender, {
-                'step': 'agent_response',
-                'sender': sender
-            })
-            state = get_user_state(sender)  # refresh after update
-            print(f"Updated agent state: {state}")
-    
-        # 🚀 Directly call the agent_response() function
-        print(f"Calling agent_response with prompt: '{prompt}' and state: {state}")
-        updated_state = agent_response(prompt, state, phone_id)
-        print(f"Agent response returned: {updated_state}")
-        update_user_state(sender, updated_state)
-        return
-
-    # Check if user is in an active agent conversation
-    user_state = get_user_state(sender)
-    user_state['sender'] = sender
-    
-    print(f"User {sender} state: {user_state}")
-    
-    # If user is in agent_response state with active_chat, route to agent_response
-    if user_state.get('step') == 'agent_response' and user_state.get('active_chat'):
-        print(f"User {sender} is in active agent chat, routing to agent_response")
-        updated_state = agent_response(prompt, user_state, phone_id)
-        update_user_state(sender, updated_state)
-        return
-    
-    # Normal user handling
-    if text in ["hi", "hello", "hie", "hey", "start"]:
-        user_state = {'step': 'welcome', 'sender': sender}
-        updated_state = get_action('welcome', "", user_state, phone_id)
-        update_user_state(sender, updated_state)
-        return
-
-    step = user_state.get('step') or 'welcome'
-    updated_state = get_action(step, prompt, user_state, phone_id)
-    update_user_state(sender, updated_state)
-
-# Add new API endpoints to retrieve conversation data
-@app.route("/conversations/<phone_number>", methods=["GET"])
-def get_conversation(phone_number):
-    """Get conversation history for a specific phone number"""
-    try:
-        history = conversation_logger.get_conversation_history(phone_number)
-        if history:
-            return jsonify(history), 200
-        else:
-            return jsonify({"error": "Conversation not found"}), 404
-    except Exception as e:
-        logging.error(f"Error retrieving conversation: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-
-@app.route("/conversations", methods=["GET"])
-def get_recent_conversations():
-    """Get list of recent conversations"""
-    try:
-        limit = request.args.get('limit', 20, type=int)
-        conversations = conversation_logger.get_recent_conversations(limit)
-        return jsonify(conversations), 200
-    except Exception as e:
-        logging.error(f"Error retrieving recent conversations: {e}")
-        return jsonify({"error": "Internal server error"}), 500
-
-# Existing webhook and other routes remain the same...
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("connected.html")
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    if request.method == "POST":
-        try:
-            data = request.get_json()
-            if not data:
-                logging.warning("Empty webhook request")
-                return jsonify({"status": "ok"}), 200
-
-            entries = data.get("entry", [])
-            if not entries:
-                logging.info("No entries in webhook")
-                return jsonify({"status": "ok"}), 200
-
-            for entry in entries:
-                changes = entry.get("changes", [])
-                for change in changes:
-                    value = change.get("value", {})
-                    metadata = value.get("metadata", {})
-                    phone_id = metadata.get("phone_number_id")
-                    
-                    if not phone_id:
-                        continue
-                        
-                    messages = value.get("messages", [])
-                    if not messages:
-                        continue
-                        
-                    message = messages[0]
-                    sender = message.get("from")
-                    if not sender:
-                        continue
-                    
-                    print(f"Webhook received message from: {sender} (type: {type(sender)})")
-
-                    # Handle different message types
-                    if "text" in message:
-                        text = message["text"].get("body", "").strip()
-                        if text:
-                            message_handler(text, sender, phone_id)
-                    elif "interactive" in message:
-                        interactive = message["interactive"]
-                        print(f"Interactive message received: {interactive}")
-                        
-                        # Handle list replies
-                        if interactive.get("type") == "list_reply":
-                            list_reply = interactive.get("list_reply", {})
-                            reply_title = list_reply.get("title", "").strip()
-                            if reply_title:
-                                message_handler(reply_title, sender, phone_id)
-
-                        
-                        # Handle button replies
-                        elif interactive.get("type") == "button_reply":
-                            button_reply = interactive.get("button_reply", {})
-                            button_id = button_reply.get("id")
-                            button_title = button_reply.get("title", "").strip()
-                            
-                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}', Sender: {sender}")
-                            print(f"Full button_reply data: {button_reply}")
-                        
-                            # Pass Accept/Reject IDs directly
-                            if button_id in ["accept_chat", "reject_chat"]:
-                                prompt = button_id
-                                print(f"Setting prompt to button_id: '{prompt}'")
-                            elif button_id == "quote_btn":
-                                prompt = "Request Quote"
-                            elif button_id == "back_btn":
-                                prompt = "Back to Services"
-                            else:
-                                prompt = button_title
-                        
-                            if prompt:
-                                print(f"Calling message_handler with prompt: '{prompt}' for sender: {sender}")
-                                message_handler(prompt, sender, phone_id)
-
-
-        except Exception as e:
-            logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-        return jsonify({"status": "ok"}), 200
 
 # Handlers
 def handle_welcome(prompt, user_data, phone_id):
@@ -1117,6 +774,7 @@ def handle_services_menu(prompt, user_data, phone_id):
         send_message("⚠️ Please try selecting again or type 'menu'", user_data['sender'], phone_id)
         return {'step': 'services_menu'}
 
+
 def handle_service_detail(prompt, user_data, phone_id):
     try:
         # Clean the input and check for button responses
@@ -1179,6 +837,7 @@ def handle_service_detail(prompt, user_data, phone_id):
         logging.error(f"Error in handle_service_detail: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'services_menu'}
+        
 
 def handle_chatbot_menu(prompt, user_data, phone_id):
     try:
@@ -1305,6 +964,7 @@ def handle_get_quote_info(prompt, user_data, phone_id):
         logging.error(f"Error in handle_get_quote_info: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+        
 
 def handle_quote_followup(prompt, user_data, phone_id):
     try:
@@ -1522,6 +1182,7 @@ def handle_get_callback_details(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
+
 def human_agent(prompt, user_data, phone_id):
     """Handles the handover process to a human agent."""
     try:
@@ -1627,6 +1288,7 @@ def human_agent(prompt, user_data, phone_id):
         logging.error(f"Error in human_agent: {e}")
         send_message("An error occurred during agent transfer. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+
 
 def agent_response(prompt, user_data, phone_id):
     """Handles agent accept/reject and forwards chat messages."""
@@ -1872,6 +1534,7 @@ def agent_response(prompt, user_data, phone_id):
         send_message("An error occurred in agent communication. Returning to main menu.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
+
 # Action mapping
 action_mapping = {
     "welcome": handle_welcome,
@@ -1906,6 +1569,159 @@ def get_action(current_state, prompt, user_data, phone_id):
         logging.error(f"[get_action] Error in handler {handler.__name__} for state {current_state}: {e}", exc_info=True)
         # Fallback to welcome
         return handle_welcome("", user_data, phone_id)
+
+
+# Message handler
+def message_handler(prompt, sender, phone_id):
+    text = prompt.strip().lower()
+
+    # If the sender is an agent, set them to agent mode on first contact
+    normalized_sender = normalize_phone_number(sender)
+    print(f"Checking if {sender} (normalized: {normalized_sender}) is in AGENT_NUMBERS: {AGENT_NUMBERS}")
+    print(f"Sender type: {type(sender)}, AGENT_NUMBERS types: {[type(x) for x in AGENT_NUMBERS]}")
+    
+    if normalized_sender in AGENT_NUMBERS or sender in AGENT_NUMBERS:
+        print(f"Agent message received: '{prompt}' from {sender}")
+        print(f"AGENT_NUMBERS: {AGENT_NUMBERS}")
+        state = get_user_state(sender)
+        print(f"Current agent state: {state}")
+        
+        # Also try to get state for normalized sender
+        if state.get('step') != 'agent_response':
+            normalized_state = get_user_state(normalized_sender)
+            print(f"Normalized sender state: {normalized_state}")
+            if normalized_state.get('step') == 'agent_response':
+                state = normalized_state
+                print(f"Using normalized sender state: {state}")
+        
+        if state.get('step') != 'agent_response':
+            print(f"Updating agent state to agent_response")
+            update_user_state(sender, {
+                'step': 'agent_response',
+                'sender': sender
+            })
+            state = get_user_state(sender)  # refresh after update
+            print(f"Updated agent state: {state}")
+    
+        # 🚀 Directly call the agent_response() function
+        print(f"Calling agent_response with prompt: '{prompt}' and state: {state}")
+        updated_state = agent_response(prompt, state, phone_id)
+        print(f"Agent response returned: {updated_state}")
+        update_user_state(sender, updated_state)
+        return
+
+    # Check if user is in an active agent conversation
+    user_state = get_user_state(sender)
+    user_state['sender'] = sender
+    
+    print(f"User {sender} state: {user_state}")
+    
+    # If user is in agent_response state with active_chat, route to agent_response
+    if user_state.get('step') == 'agent_response' and user_state.get('active_chat'):
+        print(f"User {sender} is in active agent chat, routing to agent_response")
+        updated_state = agent_response(prompt, user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
+    
+    # Normal user handling
+    if text in ["hi", "hello", "hie", "hey", "start"]:
+        user_state = {'step': 'welcome', 'sender': sender}
+        updated_state = get_action('welcome', "", user_state, phone_id)
+        update_user_state(sender, updated_state)
+        return
+
+    step = user_state.get('step') or 'welcome'
+    updated_state = get_action(step, prompt, user_state, phone_id)
+    update_user_state(sender, updated_state)
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("connected.html")
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    if request.method == "POST":
+        try:
+            data = request.get_json()
+            if not data:
+                logging.warning("Empty webhook request")
+                return jsonify({"status": "ok"}), 200
+
+            entries = data.get("entry", [])
+            if not entries:
+                logging.info("No entries in webhook")
+                return jsonify({"status": "ok"}), 200
+
+            for entry in entries:
+                changes = entry.get("changes", [])
+                for change in changes:
+                    value = change.get("value", {})
+                    metadata = value.get("metadata", {})
+                    phone_id = metadata.get("phone_number_id")
+                    
+                    if not phone_id:
+                        continue
+                        
+                    messages = value.get("messages", [])
+                    if not messages:
+                        continue
+                        
+                    message = messages[0]
+                    sender = message.get("from")
+                    if not sender:
+                        continue
+                    
+                    print(f"Webhook received message from: {sender} (type: {type(sender)})")
+
+                    # Handle different message types
+                    if "text" in message:
+                        text = message["text"].get("body", "").strip()
+                        if text:
+                            message_handler(text, sender, phone_id)
+                    elif "interactive" in message:
+                        interactive = message["interactive"]
+                        print(f"Interactive message received: {interactive}")
+                        
+                        # Handle list replies
+                        if interactive.get("type") == "list_reply":
+                            list_reply = interactive.get("list_reply", {})
+                            reply_title = list_reply.get("title", "").strip()
+                            if reply_title:
+                                message_handler(reply_title, sender, phone_id)
+
+                        
+                        # Handle button replies
+                        elif interactive.get("type") == "button_reply":
+                            button_reply = interactive.get("button_reply", {})
+                            button_id = button_reply.get("id")
+                            button_title = button_reply.get("title", "").strip()
+                            
+                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}', Sender: {sender}")
+                            print(f"Full button_reply data: {button_reply}")
+                        
+                            # Pass Accept/Reject IDs directly
+                            if button_id in ["accept_chat", "reject_chat"]:
+                                prompt = button_id
+                                print(f"Setting prompt to button_id: '{prompt}'")
+                            elif button_id == "quote_btn":
+                                prompt = "Request Quote"
+                            elif button_id == "back_btn":
+                                prompt = "Back to Services"
+                            else:
+                                prompt = button_title
+                        
+                            if prompt:
+                                print(f"Calling message_handler with prompt: '{prompt}' for sender: {sender}")
+                                message_handler(prompt, sender, phone_id)
+
+
+        except Exception as e:
+            logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+        return jsonify({"status": "ok"}), 200
+        
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
