@@ -11,7 +11,7 @@ from enum import Enum
 from upstash_redis import Redis
 import redis
 
-app = Flask(__name__)
+app = Flask(__name__) 
 
 # Environment variables
 wa_token = os.environ.get("WA_TOKEN")
