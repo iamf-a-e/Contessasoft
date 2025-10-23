@@ -473,9 +473,11 @@ def handle_main_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
         for option in MainMenuOptions:
-            if prompt.lower() in option.value.lower():
+            option_text = option.value.lower()[:24]  # match WhatsApp truncation limit
+            if prompt.lower() in option_text or option_text in prompt.lower():
                 selected_option = option
                 break
+
                 
         if not selected_option:
             send_message("Fae selection. Please choose an option from the list.", user_data['sender'], phone_id)
