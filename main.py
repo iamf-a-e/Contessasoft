@@ -471,35 +471,50 @@ def handle_restart_confirmation(prompt, user_data, phone_id):
 
 def handle_main_menu(prompt, user_data, phone_id):
     try:
-        selected_option = None
-        for option in MainMenuOptions:
-            option_text = option.value.lower()[:24]  # match WhatsApp truncation limit
-            if prompt.lower() in option_text or option_text in prompt.lower():
-                selected_option = option
-                break
+        # Normalize input
+        normalized = prompt.strip().lower()
+        print(f"🧭 handle_main_menu() received prompt: '{prompt}' (normalized: '{normalized}')")
 
-                
+        # Map list reply IDs to menu options (IDs come from send_list_message)
+        option_map = {
+            "option_1": MainMenuOptions.ABOUT,
+            "option_2": MainMenuOptions.SERVICES,
+            "option_3": MainMenuOptions.QUOTE,
+            "option_4": MainMenuOptions.SUPPORT,
+            "option_5": MainMenuOptions.CONTACT
+        }
+
+        # Try to match by list ID first
+        selected_option = option_map.get(normalized)
+
+        # If not found, try to match by text (handles typed replies or button titles)
         if not selected_option:
-            send_message("Fae selection. Please choose an option from the list.", user_data['sender'], phone_id)
+            for option in MainMenuOptions:
+                opt_text = option.value.lower()[:24]  # WhatsApp truncates to 24 chars
+                if normalized in opt_text or opt_text in normalized:
+                    selected_option = option
+                    break
+
+        # If still not matched, re-prompt user
+        if not selected_option:
+            print(f"⚠️ No valid match for '{prompt}', staying in main_menu")
+            send_message("Please select a valid option from the list.", user_data['sender'], phone_id)
             return {'step': 'main_menu'}
-        
+
+        print(f"✅ Selected option: {selected_option.name}")
+
+        # --- Handle the selected option ---
         if selected_option == MainMenuOptions.ABOUT:
             about_msg = (
                 "Contessasoft is a Zimbabwe-based software company established in 2022.\n"
                 "We develop custom systems for businesses in finance, education, logistics, retail, and other sectors.\n\n"
                 "Would you like to:"
             )
-            
             about_options = [option.value for option in AboutOptions]
-            send_list_message(
-                about_msg,
-                about_options,
-                user_data['sender'],
-                phone_id
-            )
+            send_list_message(about_msg, about_options, user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {'step': 'about_menu'})
             return {'step': 'about_menu'}
-            
+
         elif selected_option == MainMenuOptions.SERVICES:
             services_msg = (
                 "🔧 *Our Services* 🔧\n\n"
@@ -507,70 +522,45 @@ def handle_main_menu(prompt, user_data, phone_id):
                 "Select a service to learn more:"
             )
             service_options = [option.value for option in ServiceOptions]
-            
-            # Ensure options aren't too long for WhatsApp limits
-            service_options = [opt[:72] for opt in service_options]
-            
-            send_list_message(
-                services_msg,
-                service_options,
-                user_data['sender'],
-                phone_id
-            )
+            send_list_message(services_msg, service_options, user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {'step': 'services_menu'})
             return {'step': 'services_menu'}
-            
-            
+
         elif selected_option == MainMenuOptions.QUOTE:
-            send_message(
-                "To help us prepare a quote, please provide your full name.",
-                user_data['sender'],
-                phone_id
-            )
-            # Initialize empty user object
+            send_message("To help us prepare a quote, please provide your full name.", user_data['sender'], phone_id)
             user = User(name="", phone=user_data['sender'])
             update_user_state(user_data['sender'], {
                 'step': 'get_quote_info',
                 'user': user.to_dict(),
-                'field': 'name'  # First field to collect
+                'field': 'name'
             })
             return {'step': 'get_quote_info'}
-            
+
         elif selected_option == MainMenuOptions.SUPPORT:
             support_msg = "Please select the type of support you need:"
             support_options = [option.value for option in SupportOptions]
-            send_list_message(
-                support_msg,
-                support_options,
-                user_data['sender'],
-                phone_id
-            )
+            send_list_message(support_msg, support_options, user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {'step': 'support_menu'})
             return {'step': 'support_menu'}
-            
+
         elif selected_option == MainMenuOptions.CONTACT:
             contact_msg = (
                 "You can reach Contessasoft through the following:\n\n"
-                "Address: 115 ED Mnangagwa Road, Highlands, Harare, Zimbabwe\n"
-                "WhatsApp: +263 242 498954\n"
-                "Email: sales@contessasoft.co.zw\n\n"
+                "📍 Address: 115 ED Mnangagwa Road, Highlands, Harare, Zimbabwe\n"
+                "📞 WhatsApp: +263 242 498954\n"
+                "✉️ Email: sales@contessasoft.co.zw\n\n"
                 "Would you like to:"
             )
-            
             contact_options = [option.value for option in ContactOptions]
-            send_list_message(
-                contact_msg,
-                contact_options,
-                user_data['sender'],
-                phone_id
-            )
+            send_list_message(contact_msg, contact_options, user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {'step': 'contact_menu'})
             return {'step': 'contact_menu'}
-            
+
     except Exception as e:
-        logging.error(f"Error in handle_main_menu: {e}")
+        logging.error(f"Error in handle_main_menu: {e}\n{traceback.format_exc()}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+
 
 def handle_about_menu(prompt, user_data, phone_id):
     try:
@@ -1707,7 +1697,7 @@ def webhook():
                             list_reply = interactive.get("list_reply", {})
                             reply_title = list_reply.get("title", "").strip()
                             if reply_title:
-                                message_handler(reply_title, sender, phone_id)
+                                message_handler(reply_title or reply_id, sender, phone_id)
 
                         
                         # Handle button replies
