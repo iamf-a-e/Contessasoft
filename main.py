@@ -143,20 +143,28 @@ def normalize_phone_number(phone):
 # Redis state functions
 def get_user_state(phone_number):
     normalized_phone = normalize_phone_number(phone_number)
-    state_json = redis_client.get(f"user_state:{normalized_phone}")
+    print(f"🔍 Getting state for: {normalized_phone}")
+    
+    key = f"user_state:{normalized_phone}"
+    state_json = redis_client.get(key)
+    
     if state_json:
         state = json.loads(state_json)
-        print(f"✅ Retrieved state for {normalized_phone}: {state}")
+        print(f"✅ Retrieved state: {state}")
         return state
+    
     default_state = {'step': 'welcome', 'sender': normalized_phone}
-    print(f"❌ No state found for {normalized_phone}, returning default: {default_state}")
+    print(f"❌ No state found, returning default: {default_state}")
     return default_state
+    
 
 def update_user_state(phone_number, updates):
     normalized_phone = normalize_phone_number(phone_number)
     print(f"🔄 Updating state for {normalized_phone}")
     
     current = get_user_state(normalized_phone)
+    print(f"📋 Current state before update: {current}")
+    
     current.update(updates)
     current['phone_number'] = normalized_phone
     if 'sender' not in current:
@@ -164,23 +172,25 @@ def update_user_state(phone_number, updates):
         
     key = f"user_state:{normalized_phone}"
     print(f"💾 Saving to Redis key: {key}")
-    print(f"📦 Data: {current}")
+    print(f"📦 New state data: {current}")
     
     try:
-        result = redis_client.setex(key, 86400, json.dumps(current))
+        # Use setex with proper error handling
+        result = redis_client.setex(key, 86400, json.dumps(current, default=str))
         print(f"✅ Redis save result: {result}")
         
-        # Immediate verification
+        # Verify immediately
         verify = redis_client.get(key)
         if verify:
             verified_data = json.loads(verify)
-            print(f"✅ Verified save successful: {verified_data.get('step', 'unknown')}")
+            print(f"✅ Verified save successful - step: {verified_data.get('step', 'unknown')}")
         else:
-            print(f"❌ Verification failed - key not found")
+            print(f"❌ Verification failed - key not found after save")
             
     except Exception as e:
-        print(f"❌ Redis error: {e}")
-        
+        print(f"❌ Redis error in update_user_state: {e}")
+        traceback.print_exc()
+
 
 def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -1692,12 +1702,17 @@ def webhook():
                         interactive = message["interactive"]
                         print(f"Interactive message received: {interactive}")
                         
-                        # Handle list replies
+                        # Handle list replies                        
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
+                            reply_id = list_reply.get("id", "")  # This should be "option_1", "option_2", etc.
                             reply_title = list_reply.get("title", "").strip()
-                            if reply_title:
-                                message_handler(reply_title or reply_id, sender, phone_id)
+                            
+                            # Use the ID if available, otherwise fall back to title
+                            if reply_id:
+                                message_handler(reply_id, sender, phone_id)
+                            else:
+                                message_handler(reply_title, sender, phone_id)
 
                         
                         # Handle button replies
