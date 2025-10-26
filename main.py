@@ -137,7 +137,7 @@ def normalize_phone_number(phone):
     else:
         return cleaned
 
-# User state functions (keep existing functionality)
+# User state functions (for bot flow state)
 def get_user_state(phone_number):
     normalized_phone = normalize_phone_number(phone_number)
     state_json = redis_client.get(f"user_state:{normalized_phone}")
@@ -178,7 +178,7 @@ def update_user_state(phone_number, updates):
     except Exception as e:
         print(f"❌ Redis error saving user state: {e}")
 
-# Conversation history functions (new)
+# Conversation history functions (for message history)
 def save_conversation_message(phone_number, message, is_user=True):
     """Save a message to conversation history (max 100 messages)"""
     normalized_phone = normalize_phone_number(phone_number)
@@ -442,7 +442,10 @@ def send_list_message(text, options, recipient, phone_id):
         logging.error(f"Unexpected error sending list message: {str(e)}")
         return False
 
-# Handlers (using user_state for state management)
+# All the handler functions remain the same as before...
+# [Include all the handler functions: handle_welcome, handle_main_menu, handle_about_menu, etc.]
+# They should use get_user_state and update_user_state for state management
+
 def handle_welcome(prompt, user_data, phone_id):
     welcome_msg = (
         "🌟 *Welcome to Contessasoft (Private) Limited!* 🌟\n\n"
