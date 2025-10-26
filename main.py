@@ -461,13 +461,13 @@ def send_list_message(text, options, recipient, phone_id):
             "type": "list",
             "header": {
                 "type": "text",
-                "text": "Menu Options"[:60]  # Max 60 chars for header
+                "text": ""[:60]  # Max 60 chars for header
             },
             "body": {
                 "text": text[:1024]  # Max 1024 chars for body
             },
             "footer": {
-                "text": "Choose an option"[:60]  # Max 60 chars for footer
+                "text": ""[:60]  # Max 60 chars for footer
             },
             "action": {
                 "button": "Options"[:20],  # Max 20 chars for button text
