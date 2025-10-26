@@ -233,6 +233,65 @@ def get_full_conversation_history(phone_number):
     """Get full conversation history (all 100 messages)"""
     return get_conversation_history(phone_number, limit=100)
 
+# Quote request functions (new)
+def generate_quote_reference():
+    """Generate a unique quote reference (e.g., 3CPHLV59)"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def save_quote_request(quote_reference, quote_data):
+    """Save quote request to Redis with quote reference as key"""
+    quote_key = f"quote:{quote_reference}"
+    
+    try:
+        # Add timestamp and reference to quote data
+        quote_data['timestamp'] = datetime.now().isoformat()
+        quote_data['quote_reference'] = quote_reference
+        
+        # Save to Redis with longer expiration (30 days for quotes)
+        result = redis_client.setex(quote_key, 2592000, json.dumps(quote_data))
+        print(f"💾 Saved quote request to Redis key: {quote_key}")
+        print(f"📦 Quote data: {quote_data}")
+        return result
+    except Exception as e:
+        print(f"❌ Error saving quote request: {e}")
+        return False
+
+def get_quote_request(quote_reference):
+    """Get quote request by reference"""
+    quote_key = f"quote:{quote_reference}"
+    
+    try:
+        quote_json = redis_client.get(quote_key)
+        if quote_json:
+            quote_data = json.loads(quote_json)
+            print(f"✅ Retrieved quote request: {quote_reference}")
+            return quote_data
+        print(f"❌ Quote request not found: {quote_reference}")
+        return None
+    except Exception as e:
+        print(f"❌ Error getting quote request: {e}")
+        return None
+
+def get_all_quote_requests():
+    """Get all quote requests (admin function)"""
+    try:
+        # Note: This might be inefficient for large datasets
+        # In production, you might want to use Redis search or a separate database
+        keys = redis_client.keys("quote:*")
+        quotes = []
+        for key in keys:
+            quote_json = redis_client.get(key)
+            if quote_json:
+                quote_data = json.loads(quote_json)
+                quotes.append(quote_data)
+        
+        # Sort by timestamp (newest first)
+        quotes.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        return quotes
+    except Exception as e:
+        print(f"❌ Error getting all quote requests: {e}")
+        return []
+
 def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
     headers = {
@@ -442,8 +501,91 @@ def send_list_message(text, options, recipient, phone_id):
         logging.error(f"Unexpected error sending list message: {str(e)}")
         return False
 
-# All the handler functions remain the same as before...
-# [Include all the handler functions: handle_welcome, handle_main_menu, handle_about_menu, etc.]
+# Updated handle_get_quote_info to save quotes separately
+def handle_get_quote_info(prompt, user_data, phone_id):
+    try:
+        user = User.from_dict(user_data['user'])
+        current_field = user_data.get('field')
+        
+        if current_field == 'name':
+            user.name = prompt
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email'
+            })
+            send_message("Thank you. Please provide your email address:", user_data['sender'], phone_id)
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email'
+            }
+            
+        elif current_field == 'email':
+            user.email = prompt
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description'
+            })
+            send_message("Please provide a short description of your project:", user_data['sender'], phone_id)
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description'
+            }
+            
+        elif current_field == 'description':
+            user.project_description = prompt
+            
+            # Generate quote reference
+            quote_reference = generate_quote_reference()
+            
+            # Prepare quote data
+            quote_data = {
+                'user': user.to_dict(),
+                'service_type': user_data.get('service_description', 'General'),
+                'selected_service': user_data.get('selected_service'),
+                'quote_reference': quote_reference,
+                'status': 'submitted'
+            }
+            
+            # Save quote request to separate Redis key
+            save_quote_request(quote_reference, quote_data)
+            
+            # Send quote request to admin
+            quote_msg = (
+                f"📋 *New Quote Request* - {quote_reference}\n\n"
+                f"👤 Name: {user.name}\n"
+                f"📞 Phone: {user.phone}\n"
+                f"📧 Email: {user.email}\n"
+                f"🛠️ Service: {user_data.get('service_description', 'General')}\n"
+                f"📝 Description: {user.project_description}\n"
+                f"⏰ Submitted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            if owner_phone:
+                send_message(quote_msg, owner_phone, phone_id)
+            
+            # Send confirmation to user
+            send_message(
+                f"Thank you! Your quote request has been submitted.\n\n"
+                f"📋 *Quote Reference:* {quote_reference}\n"
+                f"⏰ We'll contact you within 24 hours.\n"
+                f"📞 For urgent inquiries, call: +263 242 498954",
+                user_data['sender'],
+                phone_id
+            )
+            
+            return handle_welcome("", user_data, phone_id)
+            
+    except Exception as e:
+        logging.error(f"Error in handle_get_quote_info: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+# All other handler functions remain the same...
+# [Include handle_welcome, handle_main_menu, handle_about_menu, handle_services_menu, etc.]
 # They should use get_user_state and update_user_state for state management
 
 def handle_welcome(prompt, user_data, phone_id):
@@ -858,69 +1000,6 @@ def handle_service_detail(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'services_menu'}
 
-def handle_get_quote_info(prompt, user_data, phone_id):
-    try:
-        user = User.from_dict(user_data['user'])
-        current_field = user_data.get('field')
-        
-        if current_field == 'name':
-            user.name = prompt
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'email'
-            })
-            send_message("Thank you. Please provide your email address:", user_data['sender'], phone_id)
-            return {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'email'
-            }
-            
-        elif current_field == 'email':
-            user.email = prompt
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'description'
-            })
-            send_message("Please provide a short description of your project:", user_data['sender'], phone_id)
-            return {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'description'
-            }
-            
-        elif current_field == 'description':
-            user.project_description = prompt
-            
-            # Send quote request to admin
-            quote_msg = (
-                f"📋 *New Quote Request*\n\n"
-                f"👤 Name: {user.name}\n"
-                f"📞 Phone: {user.phone}\n"
-                f"📧 Email: {user.email}\n"
-                f"🛠️ Service: {user_data.get('service_description', 'General')}\n"
-                f"📝 Description: {user.project_description}"
-            )
-            
-            if owner_phone:
-                send_message(quote_msg, owner_phone, phone_id)
-            
-            send_message(
-                "Thank you! Your quote request has been submitted. Our team will contact you within 24 hours.\n\n"
-                "Reference: #" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)),
-                user_data['sender'],
-                phone_id
-            )
-            
-            return handle_welcome("", user_data, phone_id)
-            
-    except Exception as e:
-        logging.error(f"Error in handle_get_quote_info: {e}")
-        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
 def handle_support_menu(prompt, user_data, phone_id):
     try:
         selected_option = None
@@ -1116,7 +1195,7 @@ def message_handler(prompt, sender, phone_id):
     updated_state = get_action(step, prompt, user_data, phone_id)
     update_user_state(sender, updated_state)
 
-# Admin function to get conversation history
+# Admin endpoints
 @app.route("/conversation/<phone_number>", methods=["GET"])
 def get_conversation(phone_number):
     """Admin endpoint to get conversation history"""
@@ -1126,6 +1205,33 @@ def get_conversation(phone_number):
             "phone_number": phone_number,
             "conversation": conversation,
             "total_messages": len(conversation)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/quote/<quote_reference>", methods=["GET"])
+def get_quote(quote_reference):
+    """Admin endpoint to get specific quote request"""
+    try:
+        quote_data = get_quote_request(quote_reference)
+        if quote_data:
+            return jsonify({
+                "quote_reference": quote_reference,
+                "quote_data": quote_data
+            })
+        else:
+            return jsonify({"error": "Quote not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/quotes", methods=["GET"])
+def get_all_quotes():
+    """Admin endpoint to get all quote requests"""
+    try:
+        quotes = get_all_quote_requests()
+        return jsonify({
+            "total_quotes": len(quotes),
+            "quotes": quotes
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
