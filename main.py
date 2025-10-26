@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["+263772210415"]
+AGENT_NUMBERS = ["+263785019494"]
 
 # Redis client setup
 redis_client = Redis(
@@ -552,301 +552,7 @@ def handle_anything_else(prompt, user_data, phone_id):
         send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
-# Updated handle_get_quote_info to include "anything else" after completion
-def handle_get_quote_info(prompt, user_data, phone_id):
-    try:
-        user = User.from_dict(user_data['user'])
-        current_field = user_data.get('field')
-        
-        if current_field == 'name':
-            user.name = prompt
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'email'
-            })
-            send_message("Thank you. Please provide your email address:", user_data['sender'], phone_id)
-            return {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'email'
-            }
-            
-        elif current_field == 'email':
-            user.email = prompt
-            update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'description'
-            })
-            send_message("Please provide a short description of your project:", user_data['sender'], phone_id)
-            return {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'description'
-            }
-            
-        elif current_field == 'description':
-            user.project_description = prompt
-            
-            # Generate quote reference
-            quote_reference = generate_quote_reference()
-            
-            # Prepare quote data
-            quote_data = {
-                'user': user.to_dict(),
-                'service_type': user_data.get('service_description', 'General'),
-                'selected_service': user_data.get('selected_service'),
-                'quote_reference': quote_reference,
-                'status': 'submitted'
-            }
-            
-            # Save quote request to separate Redis key
-            save_quote_request(quote_reference, quote_data)
-            
-            # Send quote request to admin
-            quote_msg = (
-                f"📋 *New Quote Request* - {quote_reference}\n\n"
-                f"👤 Name: {user.name}\n"
-                f"📞 Phone: {user.phone}\n"
-                f"📧 Email: {user.email}\n"
-                f"🛠️ Service: {user_data.get('service_description', 'General')}\n"
-                f"📝 Description: {user.project_description}\n"
-                f"⏰ Submitted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            
-            if owner_phone:
-                send_message(quote_msg, owner_phone, phone_id)
-            
-            # Send confirmation to user
-            send_message(
-                f"Thank you! Your quote request has been submitted.\n\n"
-                f"📋 *Quote Reference:* {quote_reference}\n"
-                f"⏰ We'll contact you within 24 hours.\n"
-                f"📞 For urgent inquiries, call: +263 242 498954",
-                user_data['sender'],
-                phone_id
-            )
-            
-            # After quote completion, ask if anything else is needed
-            return handle_anything_else("", user_data, phone_id)
-            
-    except Exception as e:
-        logging.error(f"Error in handle_get_quote_info: {e}")
-        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
-# Updated other handlers to include "anything else" after completion
-def handle_get_support_details(prompt, user_data, phone_id):
-    try:
-        user = User.from_dict(user_data['user'])
-        user.project_description = prompt
-        
-        # Send support request to admin
-        support_msg = (
-            f"🆘 *New Support Request*\n\n"
-            f"👤 From: {user.name or 'Customer'} - {user.phone}\n"
-            f"🔧 Type: {user.support_type.value if user.support_type else 'General'}\n"
-            f"📝 Details: {prompt}"
-        )
-        
-        if owner_phone:
-            send_message(support_msg, owner_phone, phone_id)
-        
-        send_message(
-            "Thank you! Your support request has been logged. Our team will respond shortly.\n"
-            "Reference: #" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)),
-            user_data['sender'],
-            phone_id
-        )
-        
-        # After support completion, ask if anything else is needed
-        return handle_anything_else("", user_data, phone_id)
-        
-    except Exception as e:
-        logging.error(f"Error in handle_get_support_details: {e}")
-        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
-def handle_get_callback_details(prompt, user_data, phone_id):
-    try:
-        # Send callback request to admin
-        callback_msg = (
-            f"📞 *Callback Request*\n\n"
-            f"📞 From: {user_data['sender']}\n"
-            f"📝 Details: {prompt}"
-        )
-        
-        if owner_phone:
-            send_message(callback_msg, owner_phone, phone_id)
-        
-        send_message(
-            "Thank you! We'll call you at the requested time.\n"
-            "Reference: #" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)),
-            user_data['sender'],
-            phone_id
-        )
-        
-        # After callback completion, ask if anything else is needed
-        return handle_anything_else("", user_data, phone_id)
-        
-    except Exception as e:
-        logging.error(f"Error in handle_get_callback_details: {e}")
-        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
-# Updated about menu portfolio to include "anything else"
-def handle_about_menu(prompt, user_data, phone_id):
-    try:
-        selected_option = None
-        for option in AboutOptions:
-            if prompt.lower() in option.value.lower():
-                selected_option = option
-                break
-                
-        if not selected_option:
-            send_message("Invalid selection. Please choose an option from the list.", user_data['sender'], phone_id)
-            return {'step': 'about_menu'}
-            
-        if selected_option == AboutOptions.PORTFOLIO:
-            portfolio_msg = (
-                "Our portfolio includes:\n"
-                "- Banking systems\n"
-                "- School management systems\n"
-                "- E-commerce platforms\n"
-                "- Logistics tracking systems\n"
-                "- Custom business automation"
-            )
-            send_message(portfolio_msg, user_data['sender'], phone_id)
-            # After showing portfolio, ask if anything else is needed
-            return handle_anything_else("", user_data, phone_id)
-            
-        elif selected_option == AboutOptions.PROFILE:
-            send_message(
-                "You can download our company profile from: https://contessasoft.co.zw/profile.pdf\n\n"
-                "Would you like to request more information?",
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {'step': 'request_more_info'})
-            return {'step': 'request_more_info'}
-            
-        elif selected_option == AboutOptions.BACK:
-            return handle_welcome("", user_data, phone_id)
-            
-    except Exception as e:
-        logging.error(f"Error in handle_about_menu: {e}")
-        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
-# Agent message handler
-def handle_agent_message(prompt, sender, phone_id):
-    """Handle messages from agents when no chat is transferred"""
-    try:
-        print(f"🔧 Agent message from {sender}: '{prompt}'")
-        
-        # Check if this agent has any active conversations
-        active_conversations = []
-        try:
-            # Look for any active conversations where this agent is assigned
-            conversation_keys = redis_client.keys("agent_conversation:*")
-            for key in conversation_keys:
-                conv_data_raw = redis_client.get(key)
-                if conv_data_raw:
-                    conv_data = json.loads(conv_data_raw)
-                    if conv_data.get('agent') == sender and conv_data.get('active'):
-                        active_conversations.append(conv_data)
-        except Exception as e:
-            print(f"❌ Error checking agent conversations: {e}")
-        
-        if not active_conversations:
-            # No active conversations - inform agent to wait
-            send_message(
-                "⏳ Please wait for a customer to request to speak to an agent.\n\n"
-                "You will receive a notification when a customer requests agent assistance.",
-                sender,
-                phone_id
-            )
-            print(f"ℹ️ Agent {sender} has no active conversations")
-        else:
-            # Agent has active conversations - remind them of the conversation IDs
-            conversation_info = "\n".join([f"- {conv.get('conversation_id')} (Customer: {conv.get('customer')})" 
-                                         for conv in active_conversations[:3]])  # Show max 3
-            send_message(
-                f"🤝 You have active conversations:\n{conversation_info}\n\n"
-                f"Reply with the conversation ID to continue chatting, or type 'exit' to end a conversation.",
-                sender,
-                phone_id
-            )
-            
-    except Exception as e:
-        logging.error(f"Error in handle_agent_message: {e}")
-        send_message("An error occurred processing your message.", sender, phone_id)
-
-# All other handler functions remain the same...
-def handle_welcome(prompt, user_data, phone_id):
-    welcome_msg = (
-        "🌟 *Welcome to Contessasoft (Private) Limited!* 🌟\n\n"
-        "We build intelligent software solutions including websites, mobile apps, chatbots, and business systems.\n\n"
-        "Please choose an option to continue:"
-    )
-    
-    menu_options = [option.value for option in MainMenuOptions]
-    send_list_message(
-        welcome_msg,
-        menu_options,
-        user_data['sender'],
-        phone_id
-    )
-    
-    update_user_state(user_data['sender'], {'step': 'main_menu'})
-    return {'step': 'main_menu'}
-
-def handle_restart_confirmation(prompt, user_data, phone_id):
-    try:
-        text = (prompt or "").strip().lower()
-
-        # Initial entry or unrecognized input -> show Yes/No buttons
-        if text == "" or text in ["restart", "start", "menu"]:
-            send_button_message(
-                "Would you like to go back to main menu?",
-                [
-                    {"id": "restart_yes", "title": "Yes"},
-                    {"id": "restart_no", "title": "No"}
-                ],
-                user_data['sender'],
-                phone_id
-            )
-            update_user_state(user_data['sender'], {'step': 'restart_confirmation'})
-            return {'step': 'restart_confirmation'}
-
-        # Positive confirmation -> go to welcome flow
-        if text in ["yes", "y", "restart_yes", "ok", "sure", "yeah", "yep"]:
-            return handle_welcome("", user_data, phone_id)
-
-        # Negative confirmation -> send goodbye and reset to welcome state
-        if text in ["no", "n", "restart_no", "nope", "nah"]:
-            send_message("Have a good day!", user_data['sender'], phone_id)
-            update_user_state(user_data['sender'], {'step': 'welcome'})
-            return {'step': 'welcome'}
-
-        # Any other input -> re-send buttons
-        send_button_message(
-            "Please confirm: would you like to restart with the bot?",
-            [
-                {"id": "restart_yes", "title": "Yes"},
-                {"id": "restart_no", "title": "No"}
-            ],
-            user_data['sender'],
-            phone_id
-        )
-        return {'step': 'restart_confirmation'}
-
-    except Exception as e:
-        logging.error(f"Error in handle_restart_confirmation: {e}")
-        send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
-        return {'step': 'welcome'}
-
+# Updated handle_main_menu to show services when quote is selected
 def handle_main_menu(prompt, user_data, phone_id):
     try:
         # Normalize input
@@ -905,17 +611,20 @@ def handle_main_menu(prompt, user_data, phone_id):
             return {'step': 'services_menu'}
 
         elif selected_option == MainMenuOptions.QUOTE:
-            send_message("To help us prepare a quote, please provide your full name.", user_data['sender'], phone_id)
-            user = User(name="", phone=user_data['sender'])
+            # Show services menu with quote-specific message
+            quote_services_msg = (
+                "📋 *Request a Quote* 📋\n\n"
+                "Please select the service you would like a quotation for:"
+            )
+            service_options = [option.value for option in ServiceOptions]
+            send_list_message(quote_services_msg, service_options, user_data['sender'], phone_id)
             update_user_state(user_data['sender'], {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'name'
+                'step': 'services_menu',
+                'quote_flow': True  # Flag to indicate this is for quote
             })
             return {
-                'step': 'get_quote_info',
-                'user': user.to_dict(),
-                'field': 'name'
+                'step': 'services_menu',
+                'quote_flow': True
             }
 
         elif selected_option == MainMenuOptions.SUPPORT:
@@ -943,8 +652,12 @@ def handle_main_menu(prompt, user_data, phone_id):
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
+# Updated handle_services_menu to handle quote flow
 def handle_services_menu(prompt, user_data, phone_id):
     try:
+        # Check if this is a quote flow
+        is_quote_flow = user_data.get('quote_flow', False)
+        
         # Clean and normalize input
         clean_input = prompt.strip().lower()
         
@@ -972,7 +685,11 @@ def handle_services_menu(prompt, user_data, phone_id):
                 selected_option = option
 
         if not selected_option:
-            error_msg = "🚫 Please select a valid service option:"
+            if is_quote_flow:
+                error_msg = "📋 Please select a service you would like a quotation for:"
+            else:
+                error_msg = "🚫 Please select a valid service option:"
+            
             service_options = [opt.value for opt in ServiceOptions]
             
             if not send_list_message(error_msg, service_options, user_data['sender'], phone_id):
@@ -981,7 +698,7 @@ def handle_services_menu(prompt, user_data, phone_id):
                     user_data['sender'],
                     phone_id
                 )
-            return {'step': 'services_menu'}
+            return {'step': 'services_menu', 'quote_flow': is_quote_flow}
 
         # Handle the selected service
         service_info = {
@@ -1064,14 +781,23 @@ def handle_services_menu(prompt, user_data, phone_id):
         update_user_state(user_data['sender'], {
             'step': 'service_detail',
             'selected_service': selected_option.name,
-            'service_description': selected_option.value
+            'service_description': selected_option.value,
+            'quote_flow': is_quote_flow  # Pass the quote flow flag
         })
 
         # Prepare the buttons
-        buttons = [
-            {"id": "quote_btn", "title": "💬 Request Quote"},
-            {"id": "back_btn", "title": "🔙 Back to Services"}
-        ]
+        if is_quote_flow:
+            # In quote flow, only show "Request Quote" button
+            buttons = [
+                {"id": "quote_btn", "title": "💬 Request Quote"}
+            ]
+            service_info = f"{service_info}\n\n💬 *Ready to get a quote for {selected_option.value}?*"
+        else:
+            # Normal flow, show both buttons
+            buttons = [
+                {"id": "quote_btn", "title": "💬 Request Quote"},
+                {"id": "back_btn", "title": "🔙 Back to Services"}
+            ]
 
         # Send interactive button message
         send_button_message(
@@ -1083,16 +809,21 @@ def handle_services_menu(prompt, user_data, phone_id):
             
         return {
             'step': 'service_detail',
-            'selected_service': selected_option.name
+            'selected_service': selected_option.name,
+            'quote_flow': is_quote_flow
         }
             
     except Exception as e:
         logging.error(f"Service menu error: {str(e)}\n{traceback.format_exc()}")
         send_message("⚠️ Please try selecting again or type 'menu'", user_data['sender'], phone_id)
-        return {'step': 'services_menu'}
+        return {'step': 'services_menu', 'quote_flow': user_data.get('quote_flow', False)}
 
+# Updated handle_service_detail to handle quote flow
 def handle_service_detail(prompt, user_data, phone_id):
     try:
+        # Check if this is a quote flow
+        is_quote_flow = user_data.get('quote_flow', False)
+        
         # Clean the input and check for button responses
         clean_input = prompt.strip().lower()
         
@@ -1105,17 +836,19 @@ def handle_service_detail(prompt, user_data, phone_id):
                 'user': user.to_dict(),
                 'field': 'name',  # First field to collect
                 'selected_service': user_data.get('selected_service'),
-                'service_description': user_data.get('service_description')
+                'service_description': user_data.get('service_description'),
+                'quote_flow': is_quote_flow
             })
             send_message("To help us prepare a quote, please provide your full name:", user_data['sender'], phone_id)
             return {
                 'step': 'get_quote_info',
                 'user': user.to_dict(),
-                'field': 'name'
+                'field': 'name',
+                'quote_flow': is_quote_flow
             }
             
-        # Handle "Back to Services" button or text
-        elif "back" in clean_input or "services" in clean_input or "🔙" in prompt or prompt == "back_btn":
+        # Handle "Back to Services" button or text (only in non-quote flow)
+        elif ("back" in clean_input or "services" in clean_input or "🔙" in prompt or prompt == "back_btn") and not is_quote_flow:
             services_msg = (
                 "🔧 *Our Services* 🔧\n\n"
                 "We offer complete digital solutions:\n"
@@ -1133,26 +866,231 @@ def handle_service_detail(prompt, user_data, phone_id):
             
         # If the input doesn't match any expected option
         else:
-            # Resend the service info with buttons
+            # Resend the service info with appropriate buttons
             service_info = (
                 f"ℹ️ *{user_data.get('service_description', 'Selected Service')}*\n\n"
                 "Please choose an option:"
             )
-            send_button_message(
-                service_info,
-                [
+            
+            if is_quote_flow:
+                buttons = [
+                    {"id": "quote_btn", "title": "💬 Request Quote"}
+                ]
+            else:
+                buttons = [
                     {"id": "quote_btn", "title": "💬 Request Quote"},
                     {"id": "back_btn", "title": "🔙 Back to Services"}
-                ],
+                ]
+                
+            send_button_message(
+                service_info,
+                buttons,
                 user_data['sender'],
                 phone_id
             )
-            return {'step': 'service_detail'}
+            return {'step': 'service_detail', 'quote_flow': is_quote_flow}
             
     except Exception as e:
         logging.error(f"Error in handle_service_detail: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
-        return {'step': 'services_menu'}
+        return {'step': 'services_menu', 'quote_flow': user_data.get('quote_flow', False)}
+
+# Updated handle_get_quote_info to include "anything else" after completion
+def handle_get_quote_info(prompt, user_data, phone_id):
+    try:
+        user = User.from_dict(user_data['user'])
+        current_field = user_data.get('field')
+        
+        if current_field == 'name':
+            user.name = prompt
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email',
+                'quote_flow': user_data.get('quote_flow', False)
+            })
+            send_message("Thank you. Please provide your email address:", user_data['sender'], phone_id)
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'email',
+                'quote_flow': user_data.get('quote_flow', False)
+            }
+            
+        elif current_field == 'email':
+            user.email = prompt
+            update_user_state(user_data['sender'], {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description',
+                'quote_flow': user_data.get('quote_flow', False)
+            })
+            send_message("Please provide a short description of your project:", user_data['sender'], phone_id)
+            return {
+                'step': 'get_quote_info',
+                'user': user.to_dict(),
+                'field': 'description',
+                'quote_flow': user_data.get('quote_flow', False)
+            }
+            
+        elif current_field == 'description':
+            user.project_description = prompt
+            
+            # Generate quote reference
+            quote_reference = generate_quote_reference()
+            
+            # Prepare quote data
+            quote_data = {
+                'user': user.to_dict(),
+                'service_type': user_data.get('service_description', 'General'),
+                'selected_service': user_data.get('selected_service'),
+                'quote_reference': quote_reference,
+                'status': 'submitted'
+            }
+            
+            # Save quote request to separate Redis key
+            save_quote_request(quote_reference, quote_data)
+            
+            # Send quote request to admin
+            quote_msg = (
+                f"📋 *New Quote Request* - {quote_reference}\n\n"
+                f"👤 Name: {user.name}\n"
+                f"📞 Phone: {user.phone}\n"
+                f"📧 Email: {user.email}\n"
+                f"🛠️ Service: {user_data.get('service_description', 'General')}\n"
+                f"📝 Description: {user.project_description}\n"
+                f"⏰ Submitted: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            if owner_phone:
+                send_message(quote_msg, owner_phone, phone_id)
+            
+            # Send confirmation to user
+            send_message(
+                f"Thank you! Your quote request has been submitted.\n\n"
+                f"📋 *Quote Reference:* {quote_reference}\n"
+                f"⏰ We'll contact you within 24 hours.\n"
+                f"📞 For urgent inquiries, call: +263 242 498954",
+                user_data['sender'],
+                phone_id
+            )
+            
+            # After quote completion, ask if anything else is needed
+            return handle_anything_else("", user_data, phone_id)
+            
+    except Exception as e:
+        logging.error(f"Error in handle_get_quote_info: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+# [Include all other handler functions: handle_welcome, handle_restart_confirmation, handle_about_menu, etc.]
+# They remain the same as before...
+
+def handle_welcome(prompt, user_data, phone_id):
+    welcome_msg = (
+        "🌟 *Welcome to Contessasoft (Private) Limited!* 🌟\n\n"
+        "We build intelligent software solutions including websites, mobile apps, chatbots, and business systems.\n\n"
+        "Please choose an option to continue:"
+    )
+    
+    menu_options = [option.value for option in MainMenuOptions]
+    send_list_message(
+        welcome_msg,
+        menu_options,
+        user_data['sender'],
+        phone_id
+    )
+    
+    update_user_state(user_data['sender'], {'step': 'main_menu'})
+    return {'step': 'main_menu'}
+
+def handle_restart_confirmation(prompt, user_data, phone_id):
+    try:
+        text = (prompt or "").strip().lower()
+
+        # Initial entry or unrecognized input -> show Yes/No buttons
+        if text == "" or text in ["restart", "start", "menu"]:
+            send_button_message(
+                "Would you like to go back to main menu?",
+                [
+                    {"id": "restart_yes", "title": "Yes"},
+                    {"id": "restart_no", "title": "No"}
+                ],
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'restart_confirmation'})
+            return {'step': 'restart_confirmation'}
+
+        # Positive confirmation -> go to welcome flow
+        if text in ["yes", "y", "restart_yes", "ok", "sure", "yeah", "yep"]:
+            return handle_welcome("", user_data, phone_id)
+
+        # Negative confirmation -> send goodbye and reset to welcome state
+        if text in ["no", "n", "restart_no", "nope", "nah"]:
+            send_message("Have a good day!", user_data['sender'], phone_id)
+            update_user_state(user_data['sender'], {'step': 'welcome'})
+            return {'step': 'welcome'}
+
+        # Any other input -> re-send buttons
+        send_button_message(
+            "Please confirm: would you like to restart with the bot?",
+            [
+                {"id": "restart_yes", "title": "Yes"},
+                {"id": "restart_no", "title": "No"}
+            ],
+            user_data['sender'],
+            phone_id
+        )
+        return {'step': 'restart_confirmation'}
+
+    except Exception as e:
+        logging.error(f"Error in handle_restart_confirmation: {e}")
+        send_message("An error occurred. Returning to main menu.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+def handle_about_menu(prompt, user_data, phone_id):
+    try:
+        selected_option = None
+        for option in AboutOptions:
+            if prompt.lower() in option.value.lower():
+                selected_option = option
+                break
+                
+        if not selected_option:
+            send_message("Invalid selection. Please choose an option from the list.", user_data['sender'], phone_id)
+            return {'step': 'about_menu'}
+            
+        if selected_option == AboutOptions.PORTFOLIO:
+            portfolio_msg = (
+                "Our portfolio includes:\n"
+                "- Banking systems\n"
+                "- School management systems\n"
+                "- E-commerce platforms\n"
+                "- Logistics tracking systems\n"
+                "- Custom business automation"
+            )
+            send_message(portfolio_msg, user_data['sender'], phone_id)
+            # After showing portfolio, ask if anything else is needed
+            return handle_anything_else("", user_data, phone_id)
+            
+        elif selected_option == AboutOptions.PROFILE:
+            send_message(
+                "You can download our company profile from: https://contessasoft.co.zw/profile.pdf\n\n"
+                "Would you like to request more information?",
+                user_data['sender'],
+                phone_id
+            )
+            update_user_state(user_data['sender'], {'step': 'request_more_info'})
+            return {'step': 'request_more_info'}
+            
+        elif selected_option == AboutOptions.BACK:
+            return handle_welcome("", user_data, phone_id)
+            
+    except Exception as e:
+        logging.error(f"Error in handle_about_menu: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
 
 def handle_support_menu(prompt, user_data, phone_id):
     try:
@@ -1190,6 +1128,37 @@ def handle_support_menu(prompt, user_data, phone_id):
         
     except Exception as e:
         logging.error(f"Error in handle_support_menu: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+def handle_get_support_details(prompt, user_data, phone_id):
+    try:
+        user = User.from_dict(user_data['user'])
+        user.project_description = prompt
+        
+        # Send support request to admin
+        support_msg = (
+            f"🆘 *New Support Request*\n\n"
+            f"👤 From: {user.name or 'Customer'} - {user.phone}\n"
+            f"🔧 Type: {user.support_type.value if user.support_type else 'General'}\n"
+            f"📝 Details: {prompt}"
+        )
+        
+        if owner_phone:
+            send_message(support_msg, owner_phone, phone_id)
+        
+        send_message(
+            "Thank you! Your support request has been logged. Our team will respond shortly.\n"
+            "Reference: #" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)),
+            user_data['sender'],
+            phone_id
+        )
+        
+        # After support completion, ask if anything else is needed
+        return handle_anything_else("", user_data, phone_id)
+        
+    except Exception as e:
+        logging.error(f"Error in handle_get_support_details: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
 
@@ -1234,6 +1203,77 @@ def handle_contact_menu(prompt, user_data, phone_id):
         logging.error(f"Error in handle_contact_menu: {e}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
+
+def handle_get_callback_details(prompt, user_data, phone_id):
+    try:
+        # Send callback request to admin
+        callback_msg = (
+            f"📞 *Callback Request*\n\n"
+            f"📞 From: {user_data['sender']}\n"
+            f"📝 Details: {prompt}"
+        )
+        
+        if owner_phone:
+            send_message(callback_msg, owner_phone, phone_id)
+        
+        send_message(
+            "Thank you! We'll call you at the requested time.\n"
+            "Reference: #" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)),
+            user_data['sender'],
+            phone_id
+        )
+        
+        # After callback completion, ask if anything else is needed
+        return handle_anything_else("", user_data, phone_id)
+        
+    except Exception as e:
+        logging.error(f"Error in handle_get_callback_details: {e}")
+        send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
+        return {'step': 'welcome'}
+
+# Agent message handler
+def handle_agent_message(prompt, sender, phone_id):
+    """Handle messages from agents when no chat is transferred"""
+    try:
+        print(f"🔧 Agent message from {sender}: '{prompt}'")
+        
+        # Check if this agent has any active conversations
+        active_conversations = []
+        try:
+            # Look for any active conversations where this agent is assigned
+            conversation_keys = redis_client.keys("agent_conversation:*")
+            for key in conversation_keys:
+                conv_data_raw = redis_client.get(key)
+                if conv_data_raw:
+                    conv_data = json.loads(conv_data_raw)
+                    if conv_data.get('agent') == sender and conv_data.get('active'):
+                        active_conversations.append(conv_data)
+        except Exception as e:
+            print(f"❌ Error checking agent conversations: {e}")
+        
+        if not active_conversations:
+            # No active conversations - inform agent to wait
+            send_message(
+                "⏳ Please wait for a customer to request to speak to an agent.\n\n"
+                "You will receive a notification when a customer requests agent assistance.",
+                sender,
+                phone_id
+            )
+            print(f"ℹ️ Agent {sender} has no active conversations")
+        else:
+            # Agent has active conversations - remind them of the conversation IDs
+            conversation_info = "\n".join([f"- {conv.get('conversation_id')} (Customer: {conv.get('customer')})" 
+                                         for conv in active_conversations[:3]])  # Show max 3
+            send_message(
+                f"🤝 You have active conversations:\n{conversation_info}\n\n"
+                f"Reply with the conversation ID to continue chatting, or type 'exit' to end a conversation.",
+                sender,
+                phone_id
+            )
+            
+    except Exception as e:
+        logging.error(f"Error in handle_agent_message: {e}")
+        send_message("An error occurred processing your message.", sender, phone_id)
 
 # Action mapping
 action_mapping = {
