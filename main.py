@@ -494,21 +494,37 @@ def handle_main_menu(prompt, user_data, phone_id):
             "option_5": MainMenuOptions.CONTACT
         }
 
-        # Try to match by list ID first
+        # Try to match by list ID first (this is what should come from list replies)
         selected_option = option_map.get(normalized)
 
-        # If not found, try to match by text (handles typed replies or button titles)
+        # If not found by ID, try to match by text content
         if not selected_option:
+            print(f"🔍 No direct ID match for '{normalized}', trying text matching...")
             for option in MainMenuOptions:
-                opt_text = option.value.lower()[:24]  # WhatsApp truncates to 24 chars
-                if normalized in opt_text or opt_text in normalized:
+                # Check if prompt contains any words from the option
+                option_lower = option.value.lower()
+                if normalized in option_lower:
                     selected_option = option
+                    print(f"✅ Matched by text: {option.name}")
+                    break
+                
+                # Also check individual words for better matching
+                option_words = set(option_lower.split())
+                prompt_words = set(normalized.split())
+                if option_words & prompt_words:  # If there are common words
+                    selected_option = option
+                    print(f"✅ Matched by common words: {option.name}")
                     break
 
         # If still not matched, re-prompt user
         if not selected_option:
-            print(f"⚠️ No valid match for '{prompt}', staying in main_menu")
-            send_message("Please select a valid option from the list.", user_data['sender'], phone_id)
+            print(f"⚠️ No valid match for '{prompt}', re-sending main menu")
+            send_message("Please select a valid option from the list below:", user_data['sender'], phone_id)
+            
+            # Re-send the main menu
+            welcome_msg = "🌟 *Welcome to Contessasoft!* 🌟\n\nPlease choose an option:"
+            menu_options = [option.value for option in MainMenuOptions]
+            send_list_message(welcome_msg, menu_options, user_data['sender'], phone_id)
             return {'step': 'main_menu'}
 
         print(f"✅ Selected option: {selected_option.name}")
@@ -570,7 +586,7 @@ def handle_main_menu(prompt, user_data, phone_id):
         logging.error(f"Error in handle_main_menu: {e}\n{traceback.format_exc()}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-
+        
 
 def handle_about_menu(prompt, user_data, phone_id):
     try:
@@ -1663,6 +1679,8 @@ def webhook():
     if request.method == "POST":
         try:
             data = request.get_json()
+            print(f"📨 Raw webhook data: {json.dumps(data, indent=2)}")  # Add this for debugging
+            
             if not data:
                 logging.warning("Empty webhook request")
                 return jsonify({"status": "ok"}), 200
@@ -1691,7 +1709,7 @@ def webhook():
                     if not sender:
                         continue
                     
-                    print(f"Webhook received message from: {sender} (type: {type(sender)})")
+                    print(f"Webhook received message from: {sender}")
 
                     # Handle different message types
                     if "text" in message:
@@ -1700,19 +1718,26 @@ def webhook():
                             message_handler(text, sender, phone_id)
                     elif "interactive" in message:
                         interactive = message["interactive"]
-                        print(f"Interactive message received: {interactive}")
+                        print(f"🎯 Interactive message received: {json.dumps(interactive, indent=2)}")  # Better debugging
                         
                         # Handle list replies                        
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
-                            reply_id = list_reply.get("id", "")  # This should be "option_1", "option_2", etc.
+                            reply_id = list_reply.get("id", "")
                             reply_title = list_reply.get("title", "").strip()
                             
-                            # Use the ID if available, otherwise fall back to title
+                            print(f"📋 List Reply - ID: '{reply_id}', Title: '{reply_title}'")
+                            
+                            # ALWAYS use the ID first, it's what your handler expects
                             if reply_id:
+                                print(f"🎯 Using list reply ID: {reply_id}")
                                 message_handler(reply_id, sender, phone_id)
-                            else:
+                            elif reply_title:
+                                print(f"🎯 Falling back to list reply title: {reply_title}")
                                 message_handler(reply_title, sender, phone_id)
+                            else:
+                                print("❌ No ID or title in list reply")
+                                message_handler("", sender, phone_id)
 
                         
                         # Handle button replies
@@ -1721,13 +1746,11 @@ def webhook():
                             button_id = button_reply.get("id")
                             button_title = button_reply.get("title", "").strip()
                             
-                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}', Sender: {sender}")
-                            print(f"Full button_reply data: {button_reply}")
+                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}'")
                         
                             # Pass Accept/Reject IDs directly
                             if button_id in ["accept_chat", "reject_chat"]:
                                 prompt = button_id
-                                print(f"Setting prompt to button_id: '{prompt}'")
                             elif button_id == "quote_btn":
                                 prompt = "Request Quote"
                             elif button_id == "back_btn":
@@ -1736,7 +1759,7 @@ def webhook():
                                 prompt = button_title
                         
                             if prompt:
-                                print(f"Calling message_handler with prompt: '{prompt}' for sender: {sender}")
+                                print(f"Calling message_handler with prompt: '{prompt}'")
                                 message_handler(prompt, sender, phone_id)
 
 
@@ -1745,7 +1768,7 @@ def webhook():
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
-        
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
