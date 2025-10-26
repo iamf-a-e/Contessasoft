@@ -19,7 +19,7 @@ phone_id = os.environ.get("PHONE_ID")
 gen_api = os.environ.get("GEN_API")
 owner_phone = os.environ.get("OWNER_PHONE")
 redis_url = os.environ.get("REDIS_URL")
-AGENT_NUMBERS = ["+263785019494"]
+AGENT_NUMBERS = ["+263772210415"]
 
 # Redis client setup
 redis_client = Redis(
@@ -143,28 +143,20 @@ def normalize_phone_number(phone):
 # Redis state functions
 def get_user_state(phone_number):
     normalized_phone = normalize_phone_number(phone_number)
-    print(f"🔍 Getting state for: {normalized_phone}")
-    
-    key = f"user_state:{normalized_phone}"
-    state_json = redis_client.get(key)
-    
+    state_json = redis_client.get(f"user_state:{normalized_phone}")
     if state_json:
         state = json.loads(state_json)
-        print(f"✅ Retrieved state: {state}")
+        print(f"✅ Retrieved state for {normalized_phone}: {state}")
         return state
-    
     default_state = {'step': 'welcome', 'sender': normalized_phone}
-    print(f"❌ No state found, returning default: {default_state}")
+    print(f"❌ No state found for {normalized_phone}, returning default: {default_state}")
     return default_state
-    
 
 def update_user_state(phone_number, updates):
     normalized_phone = normalize_phone_number(phone_number)
     print(f"🔄 Updating state for {normalized_phone}")
     
     current = get_user_state(normalized_phone)
-    print(f"📋 Current state before update: {current}")
-    
     current.update(updates)
     current['phone_number'] = normalized_phone
     if 'sender' not in current:
@@ -172,25 +164,23 @@ def update_user_state(phone_number, updates):
         
     key = f"user_state:{normalized_phone}"
     print(f"💾 Saving to Redis key: {key}")
-    print(f"📦 New state data: {current}")
+    print(f"📦 Data: {current}")
     
     try:
-        # Use setex with proper error handling
-        result = redis_client.setex(key, 86400, json.dumps(current, default=str))
+        result = redis_client.setex(key, 86400, json.dumps(current))
         print(f"✅ Redis save result: {result}")
         
-        # Verify immediately
+        # Immediate verification
         verify = redis_client.get(key)
         if verify:
             verified_data = json.loads(verify)
-            print(f"✅ Verified save successful - step: {verified_data.get('step', 'unknown')}")
+            print(f"✅ Verified save successful: {verified_data.get('step', 'unknown')}")
         else:
-            print(f"❌ Verification failed - key not found after save")
+            print(f"❌ Verification failed - key not found")
             
     except Exception as e:
-        print(f"❌ Redis error in update_user_state: {e}")
-        traceback.print_exc()
-
+        print(f"❌ Redis error: {e}")
+        
 
 def send_message(text, recipient, phone_id):
     url = f"https://graph.facebook.com/v19.0/{phone_id}/messages"
@@ -363,12 +353,8 @@ def send_list_message(text, options, recipient, phone_id):
     # Validate and prepare the list items
     formatted_rows = []
     for i, option in enumerate(options[:10]):  # WhatsApp allows max 10 items
-        # Use the actual option text as the ID, not "option_1", "option_2", etc.
-        # WhatsApp returns the ID field in list replies, so we need to use meaningful IDs
-        row_id = option[:24]  # Use the option text as ID (truncated to 24 chars)
-        
         formatted_rows.append({
-            "id": row_id,  # This is what WhatsApp will return in list_reply.id
+            "id": f"option_{i+1}",
             "title": option[:24],  # Max 24 characters for title
             "description": option[24:72] if len(option) > 24 else ""  # Optional description
         })
@@ -407,7 +393,6 @@ def send_list_message(text, options, recipient, phone_id):
         response.raise_for_status()
         logging.info(f"List message sent successfully to {recipient}")
         return True
-        
     except requests.exceptions.HTTPError as e:
         error_detail = f"Status: {e.response.status_code}, Response: {e.response.text}"
         logging.error(f"Failed to send list message: {error_detail}")
@@ -415,7 +400,6 @@ def send_list_message(text, options, recipient, phone_id):
         fallback_msg = f"{text}\n\n" + "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options[:10]))
         send_message(fallback_msg, recipient, phone_id)
         return False
-        
     except Exception as e:
         logging.error(f"Unexpected error sending list message: {str(e)}")
         return False
@@ -491,50 +475,30 @@ def handle_main_menu(prompt, user_data, phone_id):
         normalized = prompt.strip().lower()
         print(f"🧭 handle_main_menu() received prompt: '{prompt}' (normalized: '{normalized}')")
 
-        # Map the actual option texts to menu options (since WhatsApp returns the text as ID)
+        # Map list reply IDs to menu options (IDs come from send_list_message)
         option_map = {
-            "learn about contessasoft": MainMenuOptions.ABOUT,
-            "our services": MainMenuOptions.SERVICES,
-            "request a quote": MainMenuOptions.QUOTE,
-            "talk to support": MainMenuOptions.SUPPORT,
-            "contact us": MainMenuOptions.CONTACT
+            "option_1": MainMenuOptions.ABOUT,
+            "option_2": MainMenuOptions.SERVICES,
+            "option_3": MainMenuOptions.QUOTE,
+            "option_4": MainMenuOptions.SUPPORT,
+            "option_5": MainMenuOptions.CONTACT
         }
 
-        # Try to match by the full option text first (this is what WhatsApp returns as ID)
+        # Try to match by list ID first
         selected_option = option_map.get(normalized)
 
-        # If not found, try partial matching
+        # If not found, try to match by text (handles typed replies or button titles)
         if not selected_option:
-            print(f"🔍 No exact match for '{normalized}', trying partial matching...")
-            for option_text, option in option_map.items():
-                if normalized in option_text:
-                    selected_option = option
-                    print(f"✅ Matched by partial text: {option.name}")
-                    break
-
-        # If still not matched, try word-based matching
-        if not selected_option:
-            print(f"🔍 No partial match, trying word-based matching...")
             for option in MainMenuOptions:
-                option_lower = option.value.lower()
-                # Check if any words from the prompt match the option
-                prompt_words = set(normalized.split())
-                option_words = set(option_lower.split())
-                common_words = prompt_words & option_words
-                if common_words:
+                opt_text = option.value.lower()[:24]  # WhatsApp truncates to 24 chars
+                if normalized in opt_text or opt_text in normalized:
                     selected_option = option
-                    print(f"✅ Matched by common words: {common_words} -> {option.name}")
                     break
 
         # If still not matched, re-prompt user
         if not selected_option:
-            print(f"⚠️ No valid match for '{prompt}', re-sending main menu")
-            send_message("Please select a valid option from the list below:", user_data['sender'], phone_id)
-            
-            # Re-send the main menu
-            welcome_msg = "🌟 *Welcome to Contessasoft!* 🌟\n\nPlease choose an option:"
-            menu_options = [option.value for option in MainMenuOptions]
-            send_list_message(welcome_msg, menu_options, user_data['sender'], phone_id)
+            print(f"⚠️ No valid match for '{prompt}', staying in main_menu")
+            send_message("Please select a valid option from the list.", user_data['sender'], phone_id)
             return {'step': 'main_menu'}
 
         print(f"✅ Selected option: {selected_option.name}")
@@ -596,7 +560,7 @@ def handle_main_menu(prompt, user_data, phone_id):
         logging.error(f"Error in handle_main_menu: {e}\n{traceback.format_exc()}")
         send_message("An error occurred. Please try again.", user_data['sender'], phone_id)
         return {'step': 'welcome'}
-        
+
 
 def handle_about_menu(prompt, user_data, phone_id):
     try:
@@ -1689,8 +1653,6 @@ def webhook():
     if request.method == "POST":
         try:
             data = request.get_json()
-            print(f"📨 Raw webhook data: {json.dumps(data, indent=2)}")
-            
             if not data:
                 logging.warning("Empty webhook request")
                 return jsonify({"status": "ok"}), 200
@@ -1719,7 +1681,7 @@ def webhook():
                     if not sender:
                         continue
                     
-                    print(f"Webhook received message from: {sender}")
+                    print(f"Webhook received message from: {sender} (type: {type(sender)})")
 
                     # Handle different message types
                     if "text" in message:
@@ -1728,39 +1690,29 @@ def webhook():
                             message_handler(text, sender, phone_id)
                     elif "interactive" in message:
                         interactive = message["interactive"]
-                        print(f"🎯 FULL Interactive message: {json.dumps(interactive, indent=2)}")
+                        print(f"Interactive message received: {interactive}")
                         
-                        # Handle list replies                        
+                        # Handle list replies
                         if interactive.get("type") == "list_reply":
                             list_reply = interactive.get("list_reply", {})
-                            reply_id = list_reply.get("id", "")
                             reply_title = list_reply.get("title", "").strip()
-                            
-                            print(f"📋 List Reply DETAILS:")
-                            print(f"   ID: '{reply_id}'")
-                            print(f"   Title: '{reply_title}'")
-                            print(f"   Full list_reply: {json.dumps(list_reply, indent=2)}")
-                            
-                            # Use whatever WhatsApp sends - it should be the option text
-                            if reply_id:
-                                print(f"🎯 Using list reply ID: '{reply_id}'")
-                                message_handler(reply_id, sender, phone_id)
-                            elif reply_title:
-                                print(f"🎯 Falling back to list reply title: '{reply_title}'")
-                                message_handler(reply_title, sender, phone_id)
-                            else:
-                                print("❌ No ID or title in list reply")
+                            if reply_title:
+                                message_handler(reply_title or reply_id, sender, phone_id)
 
+                        
                         # Handle button replies
                         elif interactive.get("type") == "button_reply":
                             button_reply = interactive.get("button_reply", {})
                             button_id = button_reply.get("id")
                             button_title = button_reply.get("title", "").strip()
                             
-                            print(f"Button reply - ID: '{button_id}', Title: '{button_title}'")
+                            print(f"Button reply received - ID: '{button_id}', Title: '{button_title}', Sender: {sender}")
+                            print(f"Full button_reply data: {button_reply}")
                         
+                            # Pass Accept/Reject IDs directly
                             if button_id in ["accept_chat", "reject_chat"]:
                                 prompt = button_id
+                                print(f"Setting prompt to button_id: '{prompt}'")
                             elif button_id == "quote_btn":
                                 prompt = "Request Quote"
                             elif button_id == "back_btn":
@@ -1769,14 +1721,16 @@ def webhook():
                                 prompt = button_title
                         
                             if prompt:
-                                print(f"Calling message_handler with prompt: '{prompt}'")
+                                print(f"Calling message_handler with prompt: '{prompt}' for sender: {sender}")
                                 message_handler(prompt, sender, phone_id)
+
 
         except Exception as e:
             logging.error(f"Webhook processing error: {str(e)}\n{traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
         return jsonify({"status": "ok"}), 200
+        
 
 if __name__ == "__main__":
     app.run(debug=True, port=8000)
